@@ -1,0 +1,10 @@
+[
+  { "id": "rosa",   "name": "ROSA VANCE",     "skill": 0.88, "hand": "right", "arm": 1.04, "color": "#e0533f", "quip": "BRINGS HER OWN SCORECARD. LAMINATED." },
+  { "id": "tobi",   "name": "TOBI ARCHER",    "skill": 0.8,  "hand": "left",  "arm": 1.0,  "color": "#7cc4d8", "quip": "LEFTY. NEVER LOOKS AT THE WIND FLAG." },
+  { "id": "gus",    "name": "GUS HOLLOWAY",   "skill": 0.72, "hand": "right", "arm": 1.08, "color": "#ff8a3d", "quip": "HAS A DISC FOR EVERY MOOD." },
+  { "id": "priya",  "name": "PRIYA NANDA",    "skill": 0.66, "hand": "right", "arm": 0.98, "color": "#c792ea", "quip": "PUTTS FROM ANYWHERE. DRIVES FROM SOMEWHERE." },
+  { "id": "walt",   "name": "WALT SIMMS",     "skill": 0.58, "hand": "right", "arm": 0.94, "color": "#f2b544", "quip": "ARRIVES LATE, LEAVES EARLY, BIRDIES ONCE." },
+  { "id": "kit",    "name": "KIT MORENO",     "skill": 0.5,  "hand": "left",  "arm": 1.02, "color": "#8fd16a", "quip": "SECOND SEASON. IMPROVING WEEKLY." },
+  { "id": "benny",  "name": "BENNY OYELARAN", "skill": 0.42, "hand": "right", "arm": 1.1,  "color": "#5a7bd8", "quip": "ALL ARM, NO PLAN, GREAT ATTITUDE." },
+  { "id": "lou",    "name": "LOU FERRIS",     "skill": 0.34, "hand": "right", "arm": 0.9,  "color": "#f4e9cd", "quip": "HERE FOR THE SNACKS. HONESTLY." }
+]

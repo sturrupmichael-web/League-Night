@@ -5,7 +5,7 @@
 import type { RoundState } from '../game/round';
 
 export const SAVE_KEY = 'leaguenight.save';
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 
 export interface Settings {
   sfx: boolean;
@@ -22,6 +22,19 @@ export interface SaveData {
   offeredPractice: boolean;
   roundsFinished: number;
   bestRounds: Record<string, number>; // `${courseId}:${length}` -> best score to par
+  // ---- v2: chasers, Cred and unlocks ----
+  chaserId: string;
+  /** Chosen outfit index per chaser. */
+  outfits: Record<string, number>;
+  dye: string;
+  /** Lifetime Cred earned (sets the tier). */
+  cred: number;
+  /** Course pins (course ids finished) and trophies ('lantern-cup'). */
+  pins: string[];
+  trophies: string[];
+  chaserProgress: Record<string, { rounds: number; wins: number }>;
+  cupsWon: number;
+  skinsMatchesWon: number;
 }
 
 export const defaultSave = (): SaveData => ({
@@ -31,6 +44,15 @@ export const defaultSave = (): SaveData => ({
   offeredPractice: false,
   roundsFinished: 0,
   bestRounds: {},
+  chaserId: 'mae',
+  outfits: {},
+  dye: 'stock',
+  cred: 0,
+  pins: [],
+  trophies: [],
+  chaserProgress: {},
+  cupsWon: 0,
+  skinsMatchesWon: 0,
 });
 
 /** Bring an older or partial save up to the current shape. Unknown junk gives a fresh save. */
@@ -39,13 +61,19 @@ export function migrate(raw: unknown): SaveData {
   if (!raw || typeof raw !== 'object') return base;
   const r = raw as Partial<SaveData> & { v?: number };
   if (typeof r.v !== 'number' || r.v > SAVE_VERSION) return base;
-  // v1 is the first version; future versions add steps here (if r.v < 2 ...).
+  // v1 -> v2 only added fields, which the defaults below fill in.
+  const arr = (a: unknown): string[] => (Array.isArray(a) ? a.filter((x) => typeof x === 'string') : []);
   return {
     ...base,
     ...r,
     v: SAVE_VERSION,
     settings: { ...base.settings, ...(r.settings ?? {}) },
     bestRounds: { ...(r.bestRounds ?? {}) },
+    outfits: { ...(r.outfits ?? {}) },
+    chaserProgress: { ...(r.chaserProgress ?? {}) },
+    pins: arr(r.pins),
+    trophies: arr(r.trophies),
+    cred: typeof r.cred === 'number' && isFinite(r.cred) ? r.cred : 0,
     round: r.round && Array.isArray(r.round.card) && Array.isArray(r.round.order) ? r.round : null,
   };
 }

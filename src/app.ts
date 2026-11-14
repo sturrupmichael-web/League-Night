@@ -1,31 +1,60 @@
 /**
- * Screen flow: title, setup, rounds, pause, results, how to play, settings, credits.
- * Owns the save file and writes it after every hole.
+ * Screen flow: title, the three modes (New Round, Lantern Cup, Skins), the turn minigames,
+ * results and the meta screens. Owns the save file and writes it after every hole.
  */
 import { config } from './config';
 import courseJson from './content/courses/lantern-park.json';
+import discsJson from './content/discs.json';
 import { PRACTICE_HOLE } from './content/practiceField';
+import rivalsJson from './content/rivals.json';
 import { sfx } from './core/audio';
 import type { Game } from './core/game';
 import { loadSave, type SaveData, writeSave } from './core/save';
 import { VIEW_W } from './core/screen';
-import { type CourseJson, parseCourse } from './game/hole';
-import { currentHoleIndex, isRoundOver, newRound, recordHole, type RoundLength, type RoundState, roundToPar } from './game/round';
+import { type AiHole, playAiHole } from './game/ai';
+import { cupWinner, standings } from './game/championship';
+import { chaserById, chaserConfig, CHASERS, chaptersUnlocked, isChaserUnlocked } from './game/chasers';
+import { holeWind } from './game/conditions';
+import { credTier, type CredLine, roundCred } from './game/cred';
+import { pickHighlights } from './game/highlights';
+import { type CourseJson, type HoleDef, parseCourse } from './game/hole';
+import {
+  currentHoleIndex, type HoleRecord, isRoundOver, newRound, type Pacing, recordHole, recordRivals, type RoundLength, type RoundMode, roundMode,
+  type RoundSettings, type RoundState, roundToPar,
+} from './game/round';
 import { formatToPar } from './game/rules';
-import { drawText } from './render/font';
+import { type SkinsRule, skinsOutcome, tallySkins } from './game/skins';
+import { DYES } from './game/cred';
+import { drawText, wrapText } from './render/font';
 import { PAL } from './render/palette';
+import { drawChaser } from './render/portrait';
+import type { Disc } from './sim/discs';
 import { mixSeed } from './sim/rng';
+import { makeTerrain } from './sim/terrain';
 import type { ThrowResult } from './sim/throw';
+import { ChaserScene } from './scenes/Chasers';
 import { HoleScene } from './scenes/HoleScene';
 import { HowToScene } from './scenes/HowTo';
-import { ResultsScene } from './scenes/Results';
+import { LockerScene, TURN_GAMES } from './scenes/Locker';
+import { type Clip, ReplayScene } from './scenes/Replay';
+import { type NightSummary, ResultsScene } from './scenes/Results';
+import { Bullseye } from './scenes/turn/Bullseye';
+import { LostAndFound } from './scenes/turn/LostAndFound';
+import { SkipContest } from './scenes/turn/SkipContest';
 import { drawBigText, drawLanterns, type MenuItem, MenuScene } from './ui/menu';
+
+const DISCS = discsJson as Disc[];
+
+interface Rival { id: string; name: string; skill: number; hand: 'right' | 'left'; arm: number; color: string; quip: string }
+export const RIVALS = rivalsJson as Rival[];
 
 const LENGTHS: { n: RoundLength; label: string; caption: string }[] = [
   { n: 3, label: '3 HOLES', caption: 'QUICK ONE' },
   { n: 9, label: '9 HOLES', caption: 'THE FULL COURSE' },
   { n: 18, label: '18 HOLES', caption: 'TWICE AROUND' },
 ];
+
+const MODE_NAME: Record<RoundMode, string> = { casual: 'NEW ROUND', cup: 'THE LANTERN CUP', skins: 'SKINS' };
 
 export interface AppHooks {
   onThrow?: (r: ThrowResult) => void;
@@ -37,8 +66,15 @@ export class App {
   readonly course = parseCourse(courseJson as CourseJson);
   save: SaveData = loadSave();
   private lengthIdx = 1;
+  private cupLengthIdx = 1;
+  private skinsLengthIdx = 1;
+  private rivalIdx = 0;
+  private skinsRule: SkinsRule = 'carry';
+  private pacing: Pacing = 'throw';
   /** A dev/test round that must not touch the save file. */
   private ephemeral: RoundState | null = null;
+  /** Rival holes for the hole being played, keyed by rival id. */
+  private rivalHoles: Record<string, AiHole> = {};
 
   constructor(
     private game: Game,
@@ -51,6 +87,14 @@ export class App {
     writeSave(this.save);
   }
 
+  private get chaser() {
+    return chaserById(this.save.chaserId);
+  }
+
+  private get dyeColor() {
+    return DYES.find((d) => d.id === this.save.dye)?.color ?? null;
+  }
+
   // ---------- Title ----------
 
   title() {
@@ -59,33 +103,72 @@ export class App {
     const items: MenuItem[] = [];
     if (r && !isRoundOver(r)) {
       const n = currentHoleIndex(r) + 1;
-      items.push({ caption: `HOLE ${n} OF ${r.order.length} · ${formatToPar(roundToPar(r))}`, value: 'CONTINUE', onTap: () => this.playHole() });
+      items.push({ caption: `${MODE_NAME[roundMode(r)]} · HOLE ${n} OF ${r.order.length}`, value: 'CONTINUE', onTap: () => this.playHole() });
     }
     items.push(
-      { caption: this.course.name, value: 'NEW ROUND', onTap: () => this.newRoundFlow() },
+      { caption: 'YOU AND THE COURSE', value: 'NEW ROUND', onTap: () => this.newRoundFlow() },
+      { caption: 'SEASON FINALE VS THE FIELD', value: 'THE LANTERN CUP', onTap: () => this.setupCup() },
+      { caption: 'HEAD TO HEAD FOR SKINS', value: 'SKINS', onTap: () => this.setupSkins() },
+      { caption: 'ONLINE · COMING SOON', value: 'PLAY A FRIEND', onTap: () => {}, enabled: () => false },
       { caption: 'NO SCORE', value: 'PRACTICE FIELD', onTap: () => this.practice() },
-      { caption: 'SIX QUICK PAGES', value: 'HOW TO PLAY', onTap: () => this.game.set(new HowToScene(() => this.title())) },
-      { caption: 'SOUND · HINTS · HAND', value: 'SETTINGS', onTap: () => this.settings() },
-      { caption: 'WHO MADE THIS', value: 'CREDITS', onTap: () => this.credits() },
     );
-    const best = this.save.bestRounds[`${this.course.id}:9`];
+    const small = (x: number, y: number, caption: string, value: string, onTap: () => void): MenuItem => ({ caption, value, onTap, box: { x, y, w: 56, h: 20 } });
+    items.push(
+      small(4, 254, 'WHO YOU ARE', 'CHASERS', () => this.chasers(() => this.title())),
+      small(62, 254, 'CRED', 'LOCKER', () => this.locker()),
+      small(120, 254, 'SIX PAGES', 'HOW TO', () => this.game.set(new HowToScene(() => this.title()))),
+      small(4, 277, 'SOUND · HINTS', 'SETTINGS', () => this.settings()),
+      small(62, 277, '', 'CREDITS', () => this.credits()),
+    );
+    const ch = this.chaser;
     this.game.set(
       new MenuScene({
         items,
-        top: 100,
+        top: items.length > 11 ? 82 : 92,
+        gap: 25,
         draw: (ctx, t) => {
           drawLanterns(ctx, t);
-          drawBigText(ctx, 'LEAGUE', VIEW_W / 2, 36, PAL.amber, 3);
-          drawBigText(ctx, 'NIGHT', VIEW_W / 2, 56, PAL.ink, 3);
-          drawText(ctx, 'TEE TIME IS AT DUSK', VIEW_W / 2, 80, PAL.haze, 'center');
-          const foot = best !== undefined ? `BEST 9 AT ${this.course.name}: ${formatToPar(best)}` : `ROUNDS PLAYED: ${this.save.roundsFinished}`;
-          drawText(ctx, foot, VIEW_W / 2, 296, PAL.dusk, 'center');
+          drawBigText(ctx, 'LEAGUE', VIEW_W / 2, 32, PAL.amber, 3);
+          drawBigText(ctx, 'NIGHT', VIEW_W / 2, 52, PAL.ink, 3);
+          drawText(ctx, 'TEE TIME IS AT DUSK', VIEW_W / 2, 74, PAL.haze, 'center');
+          drawChaser(ctx, 150, 316, ch, this.save.outfits[ch.id] ?? 0, 1, (Math.sin(t * 2) + 1) / 2);
+          drawText(ctx, `${this.save.cred} CRED`, 150, 278, PAL.amber, 'center');
         },
       }),
     );
   }
 
-  // ---------- New round ----------
+  // ---------- Meta screens ----------
+
+  private chasers(back: () => void) {
+    this.game.set(new ChaserScene(this.save, () => this.persist(), back));
+  }
+
+  private locker() {
+    this.game.set(
+      new LockerScene(this.save, () => this.persist(), {
+        back: () => this.title(),
+        turnGame: (id) => this.turnGame(id, (cred) => this.addCred(cred), () => this.locker()),
+      }),
+    );
+  }
+
+  private addCred(n: number) {
+    if (this.ephemeral) return;
+    this.save.cred += n;
+    this.persist();
+  }
+
+  private turnGame(id: string, onCred: (cred: number) => void, then: () => void) {
+    const done = (_score: number, cred: number) => {
+      onCred(cred);
+      then();
+    };
+    const g = id === 'bullseye' ? new Bullseye(done) : id === 'lost' ? new LostAndFound(done) : new SkipContest(done);
+    this.game.set(g);
+  }
+
+  // ---------- Setup ----------
 
   private newRoundFlow() {
     if (!this.save.offeredPractice) {
@@ -106,22 +189,26 @@ export class App {
     this.setup();
   }
 
+  private chaserItem(back: () => void): MenuItem {
+    return {
+      caption: 'YOUR CHASER',
+      value: () => `${this.chaser.name.split(' ')[0]} · ${this.save.settings.hand === 'right' ? 'RIGHTY' : 'LEFTY'}`,
+      onTap: () => this.chasers(back),
+    };
+  }
+
+  private replacesNote() {
+    return !!this.save.round && !isRoundOver(this.save.round) ? 'REPLACES YOUR SAVED ROUND' : '';
+  }
+
   private setup() {
-    const has = !!this.save.round && !isRoundOver(this.save.round);
     this.game.set(
       new MenuScene({
         top: 96,
         items: [
           { caption: () => LENGTHS[this.lengthIdx].caption, value: () => `< ${LENGTHS[this.lengthIdx].label} >`, onTap: () => (this.lengthIdx = (this.lengthIdx + 1) % LENGTHS.length) },
-          {
-            caption: 'THROWING HAND',
-            value: () => (this.save.settings.hand === 'right' ? 'RIGHTY' : 'LEFTY'),
-            onTap: () => {
-              this.save.settings.hand = this.save.settings.hand === 'right' ? 'left' : 'right';
-              this.persist();
-            },
-          },
-          { caption: has ? 'REPLACES YOUR SAVED ROUND' : `${this.course.holes.length} HOLES · PAR ${this.course.par}`, value: 'TEE OFF', onTap: () => this.startRound() },
+          this.chaserItem(() => this.setup()),
+          { caption: this.replacesNote() || `${this.course.holes.length} HOLES · PAR ${this.course.par}`, value: 'TEE OFF', onTap: () => this.startRound({ mode: 'casual', length: LENGTHS[this.lengthIdx].n }) },
           { caption: '', value: 'BACK', onTap: () => this.title() },
         ],
         draw: (ctx, t) => {
@@ -134,30 +221,123 @@ export class App {
     );
   }
 
-  private startRound() {
+  private setupCup() {
+    this.game.set(
+      new MenuScene({
+        top: 120,
+        items: [
+          { caption: () => LENGTHS[this.cupLengthIdx].caption, value: () => `< ${LENGTHS[this.cupLengthIdx].label} >`, onTap: () => (this.cupLengthIdx = (this.cupLengthIdx + 1) % LENGTHS.length) },
+          this.chaserItem(() => this.setupCup()),
+          { caption: this.replacesNote() || 'NO MULLIGANS', value: 'TEE OFF', onTap: () => this.startRound({ mode: 'cup', length: LENGTHS[this.cupLengthIdx].n }) },
+          { caption: '', value: 'BACK', onTap: () => this.title() },
+        ],
+        draw: (ctx, t) => {
+          drawLanterns(ctx, t);
+          drawBigText(ctx, 'THE LANTERN CUP', VIEW_W / 2, 36, PAL.amber);
+          drawText(ctx, 'SEASON FINALE AT ' + this.course.name, VIEW_W / 2, 58, PAL.ink, 'center');
+          wrapText('YOU AGAINST EIGHT LEAGUE REGULARS. LEADERBOARD AFTER EVERY HOLE. LOWEST CARD LIFTS THE CUP.', VIEW_W - 30).forEach((l, i) =>
+            drawText(ctx, l, VIEW_W / 2, 72 + i * 9, PAL.haze, 'center'),
+          );
+          if (this.save.trophies.includes('lantern-cup')) drawText(ctx, `CUPS WON: ${this.save.cupsWon}`, VIEW_W / 2, 230, PAL.amber, 'center');
+        },
+      }),
+    );
+  }
+
+  private setupSkins() {
+    const rival = () => RIVALS[this.rivalIdx];
+    this.game.set(
+      new MenuScene({
+        top: 104,
+        items: [
+          { caption: () => `SKILL ${'*'.repeat(Math.max(1, Math.round(rival().skill * 5)))}`, value: () => `< ${rival().name} >`, onTap: () => (this.rivalIdx = (this.rivalIdx + 1) % RIVALS.length) },
+          {
+            caption: () => (this.skinsRule === 'carry' ? 'TIES CARRY THE POT' : 'TIES LOSE THE SKIN'),
+            value: () => (this.skinsRule === 'carry' ? 'CARRY-OVER' : 'SUDDEN DEATH'),
+            onTap: () => (this.skinsRule = this.skinsRule === 'carry' ? 'sudden' : 'carry'),
+          },
+          {
+            caption: () => (this.pacing === 'throw' ? 'WATCH EVERY RIVAL THROW' : 'JUST THE HOLE RESULTS'),
+            value: () => (this.pacing === 'throw' ? 'THROW BY THROW' : 'HOLE BY HOLE'),
+            onTap: () => (this.pacing = this.pacing === 'throw' ? 'hole' : 'throw'),
+          },
+          { caption: () => LENGTHS[this.skinsLengthIdx].caption, value: () => `< ${LENGTHS[this.skinsLengthIdx].label} >`, onTap: () => (this.skinsLengthIdx = (this.skinsLengthIdx + 1) % LENGTHS.length) },
+          this.chaserItem(() => this.setupSkins()),
+          {
+            caption: this.replacesNote() || 'NO MULLIGANS',
+            value: 'TEE OFF',
+            onTap: () => this.startRound({ mode: 'skins', length: LENGTHS[this.skinsLengthIdx].n, rivalId: rival().id, skinsRule: this.skinsRule, pacing: this.pacing }),
+          },
+          { caption: '', value: 'BACK', onTap: () => this.title() },
+        ],
+        gap: 25,
+        draw: (ctx, t) => {
+          drawLanterns(ctx, t);
+          drawBigText(ctx, 'SKINS', VIEW_W / 2, 36, PAL.amber);
+          drawText(ctx, 'ONE RIVAL · ONE SKIN A HOLE', VIEW_W / 2, 58, PAL.ink, 'center');
+          wrapText(rival().quip, VIEW_W - 30).forEach((l, i) => drawText(ctx, l, VIEW_W / 2, 74 + i * 9, PAL.haze, 'center'));
+        },
+      }),
+    );
+  }
+
+  private startRound(s: Partial<RoundSettings> & { mode: RoundMode; length: RoundLength }) {
     this.ephemeral = null;
     const seed = (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0;
-    const length = LENGTHS[this.lengthIdx].n;
-    this.save.round = newRound(this.course, { courseId: this.course.id, length, hand: this.save.settings.hand }, seed);
+    const settings: RoundSettings = { courseId: this.course.id, hand: this.save.settings.hand, chaserId: this.chaser.id, ...s };
+    let round = newRound(this.course, settings, seed);
+    if (s.mode === 'cup') round = { ...round, rivals: RIVALS.map((r) => ({ id: r.id, name: r.name, scores: [] })) };
+    if (s.mode === 'skins') {
+      const r = RIVALS.find((x) => x.id === s.rivalId) ?? RIVALS[0];
+      round = { ...round, rivals: [{ id: r.id, name: r.name, scores: [] }] };
+    }
+    this.save.round = round;
     this.persist();
     this.playHole();
   }
 
+  /** Test-play a hole from the editor (?testhole). */
+  private customHole: HoleDef | null = null;
+  startCustomHole(hole: HoleDef) {
+    this.customHole = hole;
+    this.startSingleHole(0, (Date.now() >>> 0) || 5);
+  }
+
+  private holeAt(round: RoundState, idx: number): HoleDef {
+    return this.customHole ?? this.course.holes[round.order[idx]];
+  }
+
   /** Start a one-off round on a single hole (dev/testing: ?hole=N). */
   startSingleHole(index: number, seed: number) {
-    const r = newRound(this.course, { courseId: this.course.id, length: 3, hand: this.save.settings.hand }, seed);
+    const r = newRound(this.course, { courseId: this.course.id, length: 3, hand: this.save.settings.hand, chaserId: this.chaser.id }, seed);
     this.ephemeral = { ...r, order: [index] };
     this.playHole();
   }
 
   // ---------- Playing ----------
 
+  private computeRivalHoles(round: RoundState, idx: number) {
+    this.rivalHoles = {};
+    if (!round.rivals?.length) return;
+    const hole = this.holeAt(round, idx);
+    const env = { hole, terrain: makeTerrain(hole.terrain), wind: holeWind(mixSeed(round.seed, idx), hole) };
+    round.rivals.forEach((card, k) => {
+      const r = RIVALS.find((x) => x.id === card.id);
+      if (!r) return;
+      this.rivalHoles[r.id] = playAiHole(env, { skill: r.skill, hand: r.hand, arm: r.arm }, DISCS, mixSeed(round.seed, 5000 + idx * 16 + k), config);
+    });
+  }
+
   private playHole() {
     const round = this.ephemeral ?? this.save.round;
     if (!round) return this.title();
     const idx = currentHoleIndex(round);
-    const hole = this.course.holes[round.order[idx]];
-    const scene: HoleScene = new HoleScene(config, {
+    const hole = this.holeAt(round, idx);
+    const mode = roundMode(round);
+    this.computeRivalHoles(round, idx);
+    const chaser = chaserById(round.settings.chaserId);
+    const skinsRival = mode === 'skins' ? RIVALS.find((r) => r.id === round.rivals?.[0]?.id) : undefined;
+    const scene: HoleScene = new HoleScene(chaserConfig(config, chaser), {
       hole,
       practice: false,
       seed: mixSeed(round.seed, idx),
@@ -167,50 +347,308 @@ export class App {
       hand: round.settings.hand,
       hints: this.save.settings.hints,
       mulligansLeft: round.mulligansLeft,
+      dyeColor: this.dyeColor,
       onThrow: this.hooks.onThrow,
       onPause: () => this.pause(round),
       onFinish: (rec) => this.finishHole(rec),
+      introTag: mode === 'cup' ? 'THE LANTERN CUP' : mode === 'skins' ? this.skinsTag(round) : undefined,
+      rival:
+        skinsRival && round.settings.pacing === 'throw'
+          ? { name: skinsRival.name.split(' ')[0], color: skinsRival.color, hole: this.rivalHoles[skinsRival.id], cfg: config }
+          : undefined,
+      doneInfo: mode === 'casual' ? undefined : (strokes) => this.doneInfo(round, hole.par, strokes),
     });
     this.game.set(scene);
   }
 
-  private finishHole(rec: Parameters<typeof recordHole>[1]) {
-    if (this.ephemeral) {
-      const r = recordHole(this.ephemeral, rec);
-      this.ephemeral = null;
-      return this.results(r);
-    }
-    const round = recordHole(this.save.round!, rec);
-    if (isRoundOver(round)) {
-      this.save.round = null;
-      this.save.roundsFinished++;
-      const key = `${round.settings.courseId}:${round.order.length}`;
-      const tp = roundToPar(round);
-      if (this.save.bestRounds[key] === undefined || tp < this.save.bestRounds[key]) this.save.bestRounds[key] = tp;
-      this.persist();
-      this.results(round);
-    } else {
-      this.save.round = round;
-      this.persist();
-      this.playHole();
-    }
+  private skinsTag(round: RoundState) {
+    const t = this.skinsTally(round);
+    const pot = 1 + (round.settings.skinsRule === 'carry' ? t.carry : 0);
+    return `SKINS · ${pot} ON THE LINE · ${t.you}-${t.rival}`;
   }
 
-  private results(round: RoundState) {
-    this.game.set(
-      new ResultsScene(round, this.course, {
-        again: () => {
-          this.lengthIdx = Math.max(0, LENGTHS.findIndex((l) => l.n === round.order.length));
-          this.startRound();
+  private skinsTally(round: RoundState, extra?: { you: number; rival: number }) {
+    const you = round.card.map((h) => h.strokes);
+    const rival = [...(round.rivals?.[0]?.scores ?? [])];
+    if (extra) {
+      you.push(extra.you);
+      rival.push(extra.rival);
+    }
+    return tallySkins(you, rival, round.settings.skinsRule ?? 'carry', round.order.length);
+  }
+
+  /** Lines for the hole-complete panel. */
+  private doneInfo(round: RoundState, par: number, strokes: number): string[] {
+    const mode = roundMode(round);
+    if (mode === 'skins') {
+      const r = round.rivals![0];
+      const rs = this.rivalHoles[r.id]?.strokes ?? par;
+      const t = this.skinsTally(round, { you: strokes, rival: rs });
+      const h = t.holes[t.holes.length - 1];
+      const first = r.name.split(' ')[0];
+      const line = h.winner === 'you' ? `YOU TAKE ${h.paid} SKIN${h.paid > 1 ? 'S' : ''}` : h.winner === 'rival' ? `${first} TAKES ${h.paid}` : t.voided ? 'TIED · POT VOIDED' : round.settings.skinsRule === 'carry' ? `TIED · ${t.carry} CARRY OVER` : 'TIED · SKIN LOST';
+      return [`${first} ${rs} · ${line}`, `SKINS: YOU ${t.you} · ${first} ${t.rival}`];
+    }
+    const pars = round.order.map((_, k) => this.holeAt(round, k).par);
+    const rows = standings(this.entrants(round, strokes), pars);
+    const me = rows.find((x) => x.you)!;
+    const lead = rows[0];
+    return [`YOU: ${me.tied ? 'T' : ''}${me.place} AT ${formatToPar(me.toPar)}`, lead.you ? 'YOU LEAD THE FIELD' : `LEADER ${lead.name} ${formatToPar(lead.toPar)}`];
+  }
+
+  private entrants(round: RoundState, pending?: number) {
+    const you = round.card.map((h) => h.strokes);
+    if (pending !== undefined) you.push(pending);
+    return [
+      { id: 'you', name: 'YOU', scores: you, you: true },
+      ...(round.rivals ?? []).map((c) => ({ id: c.id, name: c.name, scores: pending !== undefined && this.rivalHoles[c.id] ? [...c.scores, this.rivalHoles[c.id].strokes] : c.scores })),
+    ];
+  }
+
+  private finishHole(rec: HoleRecord) {
+    const base = this.ephemeral ?? this.save.round!;
+    let round = recordHole(base, rec);
+    const scores: Record<string, number> = {};
+    for (const [id, h] of Object.entries(this.rivalHoles)) scores[id] = h.strokes;
+    round = recordRivals(round, scores);
+    if (this.ephemeral) {
+      this.ephemeral = round;
+      return this.finishRound(round);
+    }
+    this.save.round = isRoundOver(round) ? null : round;
+    this.persist();
+    const after = () => this.afterHole(round);
+    const mode = roundMode(round);
+    if (mode === 'cup') this.cupBoard(round, after);
+    else if (mode === 'skins') this.skinsBoard(round, after);
+    else after();
+  }
+
+  /** At the turn (after hole 9 of a 9 or 18), offer a minigame; then the next hole or the results. */
+  private afterHole(round: RoundState) {
+    const atTurn = round.card.length === 9 && round.order.length >= 9 && !round.turn;
+    const next = () => (isRoundOver(round) ? this.finishRound(round) : this.playHole());
+    if (!atTurn) return next();
+    const play = (id: string) =>
+      this.turnGame(
+        id,
+        (cred) => {
+          round = { ...round, turn: { game: id, cred } };
+          if (this.save.round) this.save.round = round;
+          this.addCred(cred);
         },
-        title: () => this.title(),
+        () => (isRoundOver(round) ? this.finishRound(round) : this.playHole()),
+      );
+    this.game.set(
+      new MenuScene({
+        top: 116,
+        items: [
+          ...TURN_GAMES.map((g) => ({ caption: '30 SECONDS · EARN CRED', value: g.name, onTap: () => play(g.id) })),
+          { caption: isRoundOver(round) ? 'STRAIGHT TO THE CARD' : 'STRAIGHT TO THE BACK NINE', value: 'SKIP', onTap: next },
+        ],
+        draw: (ctx, t) => {
+          drawLanterns(ctx, t);
+          drawBigText(ctx, 'AT THE TURN', VIEW_W / 2, 40, PAL.amber);
+          drawText(ctx, `NINE DOWN · ${formatToPar(roundToPar(round))}`, VIEW_W / 2, 62, PAL.ink, 'center');
+          drawText(ctx, 'GRAB A SNACK AND PLAY A QUICK ONE?', VIEW_W / 2, 80, PAL.haze, 'center');
+        },
       }),
     );
   }
 
+  private cupBoard(round: RoundState, next: () => void) {
+    const pars = round.order.map((_, k) => this.holeAt(round, k).par);
+    const rows = standings(this.entrants(round), pars);
+    const over = isRoundOver(round);
+    this.game.set(
+      new MenuScene({
+        top: 270,
+        items: [{ caption: over ? 'FINAL STANDINGS' : `HOLE ${round.card.length + 1} NEXT`, value: over ? 'SEE THE CARD' : 'NEXT HOLE', onTap: next }],
+        draw: (ctx, t) => {
+          drawLanterns(ctx, t, -8);
+          drawBigText(ctx, 'LEADERBOARD', VIEW_W / 2, 18, PAL.amber);
+          drawText(ctx, `THE LANTERN CUP · THRU ${round.card.length} OF ${round.order.length}`, VIEW_W / 2, 38, PAL.inkDim, 'center');
+          let y = 54;
+          drawText(ctx, 'POS', 8, y, PAL.haze);
+          drawText(ctx, 'PLAYER', 30, y, PAL.haze);
+          drawText(ctx, 'LAST', 132, y, PAL.haze, 'center');
+          drawText(ctx, 'TOT', VIEW_W - 8, y, PAL.haze, 'right');
+          y += 12;
+          for (const r of rows) {
+            const e = r.you ? round.card.map((h) => h.strokes) : (round.rivals!.find((c) => c.id === r.id)?.scores ?? []);
+            if (r.you) {
+              ctx.fillStyle = PAL.night3;
+              ctx.fillRect(4, y - 3, VIEW_W - 8, 12);
+            }
+            drawText(ctx, `${r.tied ? 'T' : ''}${r.place}`, 8, y, r.you ? PAL.amber : PAL.inkDim);
+            drawText(ctx, r.you ? `YOU (${this.chaser.name.split(' ')[0]})` : r.name, 30, y, r.you ? PAL.amber : PAL.ink);
+            drawText(ctx, String(e[e.length - 1] ?? '-'), 132, y, PAL.inkDim, 'center');
+            drawText(ctx, formatToPar(r.toPar), VIEW_W - 8, y, r.toPar < 0 ? PAL.amber : PAL.ink, 'right');
+            y += 13;
+          }
+        },
+      }),
+    );
+  }
+
+  private skinsBoard(round: RoundState, next: () => void) {
+    const t = this.skinsTally(round);
+    const rival = round.rivals![0];
+    const first = rival.name.split(' ')[0];
+    const over = isRoundOver(round);
+    this.game.set(
+      new MenuScene({
+        top: 270,
+        items: [{ caption: over ? 'MATCH OVER' : `${1 + (round.settings.skinsRule === 'carry' ? t.carry : 0)} ON THE LINE NEXT`, value: over ? 'SEE THE CARD' : 'NEXT HOLE', onTap: next }],
+        draw: (ctx, tm) => {
+          drawLanterns(ctx, tm, -8);
+          drawBigText(ctx, `${t.you} - ${t.rival}`, VIEW_W / 2, 18, t.you >= t.rival ? PAL.amber : PAL.ink);
+          drawText(ctx, `YOU VS ${rival.name} · ${round.settings.skinsRule === 'carry' ? 'CARRY-OVER' : 'SUDDEN DEATH'}`, VIEW_W / 2, 38, PAL.inkDim, 'center');
+          let y = 56;
+          drawText(ctx, '#', 10, y, PAL.haze, 'center');
+          drawText(ctx, 'YOU', 50, y, PAL.haze, 'center');
+          drawText(ctx, first, 90, y, PAL.haze, 'center');
+          drawText(ctx, 'SKINS', VIEW_W - 8, y, PAL.haze, 'right');
+          y += 11;
+          const rows = t.holes.slice(-17);
+          const off = t.holes.length - rows.length;
+          rows.forEach((h, i) => {
+            const n = off + i;
+            drawText(ctx, String(n + 1), 10, y, PAL.inkDim, 'center');
+            drawText(ctx, String(round.card[n].strokes), 50, y, h.winner === 'you' ? PAL.amber : PAL.ink, 'center');
+            drawText(ctx, String(rival.scores[n]), 90, y, h.winner === 'rival' ? PAL.amber : PAL.ink, 'center');
+            const txt = h.winner === 'you' ? `YOU +${h.paid}` : h.winner === 'rival' ? `${first} +${h.paid}` : n === round.order.length - 1 && t.voided ? 'VOID' : round.settings.skinsRule === 'carry' ? 'CARRY' : 'LOST';
+            drawText(ctx, txt, VIEW_W - 8, y, h.winner === 'tie' ? PAL.dusk : PAL.ink, 'right');
+            y += 11;
+          });
+        },
+      }),
+    );
+  }
+
+  /** Round over: pay Cred, record unlocks, show results. */
+  private finishRound(round: RoundState) {
+    const mode = roundMode(round);
+    const ephemeral = !!this.ephemeral && this.ephemeral === round;
+    const s = this.save;
+    const chaser = chaserById(round.settings.chaserId);
+    const before = { tier: credTier(s.cred).index, chasers: CHASERS.filter((c) => isChaserUnlocked(c, s)).map((c) => c.id), chapters: chaptersUnlocked(chaser, s) };
+    const full = round.order.length >= 9;
+    const cred: CredLine[] = round.conceded ? [] : roundCred(round.card, { full });
+    const unlocks: string[] = [];
+    let night: NightSummary;
+    let won = false;
+    const pars = round.order.map((_, k) => this.holeAt(round, k).par);
+    const tp = roundToPar(round);
+
+    if (mode === 'cup') {
+      const ents = this.entrants(round);
+      const rows = standings(ents, pars);
+      const winner = cupWinner(ents, pars);
+      won = winner === 'you';
+      const me = rows.find((r) => r.you)!;
+      if (won) cred.push({ label: 'LIFTED THE CUP', cred: 100 });
+      else if (me.place <= 3) cred.push({ label: 'TOP THREE FINISH', cred: 30 });
+      const champ = rows.find((r) => r.id === winner)!;
+      night = {
+        headline: won ? 'YOU WIN THE LANTERN CUP!' : `${champ.name} WINS THE CUP`,
+        sub: `YOU FINISHED ${me.tied ? 'T' : ''}${me.place} OF ${rows.length} AT ${formatToPar(me.toPar)}`,
+        table: rows.map((r) => ({ left: `${r.tied ? 'T' : ''}${r.place}  ${r.you ? 'YOU' : r.name}`, right: formatToPar(r.toPar), you: r.you })),
+        cred,
+        unlocks,
+      };
+    } else if (mode === 'skins') {
+      const rival = round.rivals![0];
+      const t = this.skinsTally(round);
+      let you = t.you;
+      let them = t.rival;
+      if (round.conceded) them += round.order.length - t.holes.length + t.carry; // the rest of the skins go to the rival
+      const out = round.conceded ? 'rival' : skinsOutcome({ ...t, you, rival: them });
+      won = out === 'you';
+      if (you) cred.push({ label: `SKINS WON X${you}`, cred: you * 10 });
+      if (won) cred.push({ label: 'WON THE MATCH', cred: 25 });
+      const first = rival.name.split(' ')[0];
+      night = {
+        headline: round.conceded ? `CONCEDED · ${first} TAKES IT` : won ? `YOU WIN THE SKINS ${you}-${them}` : out === 'halved' ? `ALL SQUARE ${you}-${them}` : `${first} WINS ${them}-${you}`,
+        sub: t.voided ? `${t.voided} SKIN${t.voided > 1 ? 'S' : ''} VOIDED ON THE LAST HOLE` : `YOU VS ${rival.name}`,
+        table: [
+          { left: 'YOU', right: `${you} SKINS · ${formatToPar(tp)}`, you: true },
+          { left: rival.name, right: `${them} SKINS · ${formatToPar(rival.scores.reduce((a, b) => a + b, 0) - pars.slice(0, rival.scores.length).reduce((a, b) => a + b, 0))}` },
+        ],
+        cred,
+        unlocks,
+      };
+      void you;
+    } else {
+      night = {
+        headline: tp < 0 ? 'UNDER PAR. NICE NIGHT.' : tp === 0 ? 'EVEN PAR. RESPECTABLE.' : 'THERE IS ALWAYS NEXT WEEK.',
+        sub: `${this.course.name} · ${round.order.length} HOLE${round.order.length === 1 ? '' : 'S'} · ${formatToPar(tp)}`,
+        cred,
+        unlocks,
+      };
+    }
+    if (round.turn) cred.push({ label: 'AT THE TURN (ALREADY ADDED)', cred: 0 });
+
+    if (!ephemeral) {
+      s.roundsFinished++;
+      const key = `${round.settings.courseId}:${round.order.length}`;
+      if (!round.conceded && (s.bestRounds[key] === undefined || tp < s.bestRounds[key])) s.bestRounds[key] = tp;
+      s.cred += cred.reduce((a, l) => a + l.cred, 0);
+      const prog = s.chaserProgress[chaser.id] ?? { rounds: 0, wins: 0 };
+      s.chaserProgress[chaser.id] = { rounds: prog.rounds + (round.conceded ? 0 : 1), wins: prog.wins + (won ? 1 : 0) };
+      if (full && !round.conceded && !s.pins.includes(round.settings.courseId)) {
+        s.pins.push(round.settings.courseId);
+        unlocks.push(`${this.course.name} PIN`);
+      }
+      if (mode === 'cup' && won) {
+        s.cupsWon++;
+        if (!s.trophies.includes('lantern-cup')) {
+          s.trophies.push('lantern-cup');
+          unlocks.push('THE LANTERN CUP TROPHY');
+        }
+      }
+      if (mode === 'skins' && won) s.skinsMatchesWon++;
+      const tier = credTier(s.cred);
+      if (tier.index > before.tier) unlocks.push(`TIER: ${tier.tier.name}`);
+      for (const c of CHASERS) if (!before.chasers.includes(c.id) && isChaserUnlocked(c, s)) unlocks.push(`CHASER: ${c.name}`);
+      if (chaptersUnlocked(chaser, s) > before.chapters) unlocks.push(`${chaser.name.split(' ')[0]}: CHAPTER ${chaptersUnlocked(chaser, s)}`);
+      s.round = null;
+      this.persist();
+    }
+    this.results(round, night);
+  }
+
+  private results(round: RoundState, night: NightSummary) {
+    const highlights = pickHighlights(round.card);
+    const cfg = chaserConfig(config, chaserById(round.settings.chaserId));
+    const clips: Clip[] = highlights.map((hl) => {
+      const rec = round.card[hl.holeIndex];
+      const hole = this.holeAt(round, hl.holeIndex);
+      return { hl, hole, wind: rec.wind ?? holeWind(mixSeed(round.seed, hl.holeIndex), hole) };
+    });
+    const show = () =>
+      this.game.set(
+        new ResultsScene(
+          round,
+          this.course,
+          {
+            again: () => {
+              const st = round.settings;
+              this.startRound({ ...st, mode: st.mode ?? 'casual', length: round.order.length as RoundLength });
+            },
+            title: () => this.title(),
+            reel: () => this.game.set(new ReplayScene(clips, cfg, show, this.dyeColor)),
+          },
+          night,
+          highlights,
+        ),
+      );
+    show();
+  }
+
   practice() {
     this.game.set(
-      new HoleScene(config, {
+      new HoleScene(chaserConfig(config, this.chaser), {
         hole: PRACTICE_HOLE,
         practice: true,
         seed: Date.now() >>> 0,
@@ -219,6 +657,7 @@ export class App {
         roundToPar: 0,
         hand: this.save.settings.hand,
         hints: this.save.settings.hints,
+        dyeColor: this.dyeColor,
         onThrow: this.hooks.onThrow,
         onPause: () => this.pause(null),
       }),
@@ -229,11 +668,24 @@ export class App {
 
   private pause(round: RoundState | null) {
     let confirmRestart = false;
-    const items: MenuItem[] = [
-      { caption: '', value: 'RESUME', onTap: () => this.game.pop() },
-      ...this.toggles(),
-    ];
-    if (round) {
+    let confirmConcede = false;
+    const items: MenuItem[] = [{ caption: '', value: 'RESUME', onTap: () => this.game.pop() }, ...this.toggles()];
+    if (round && roundMode(round) === 'skins' && !this.ephemeral) {
+      items.push({
+        caption: () => (confirmConcede ? 'CANNOT BE UNDONE' : 'GIVE THE MATCH AWAY'),
+        value: () => (confirmConcede ? 'REALLY CONCEDE?' : 'CONCEDE'),
+        onTap: () => {
+          if (!confirmConcede) {
+            confirmConcede = true;
+            return;
+          }
+          const r = { ...round, conceded: true };
+          this.save.round = null;
+          this.persist();
+          this.finishRound(r);
+        },
+      });
+    } else if (round) {
       items.push({
         caption: () => (confirmRestart ? 'TAP AGAIN TO CONFIRM' : 'FROM HOLE 1'),
         value: () => (confirmRestart ? 'REALLY?' : 'START OVER'),
@@ -242,16 +694,14 @@ export class App {
             confirmRestart = true;
             return;
           }
-          const length = round.order.length as RoundLength;
-          this.lengthIdx = Math.max(0, LENGTHS.findIndex((l) => l.n === length));
-          this.startRound();
+          this.startRound({ ...round.settings, mode: roundMode(round), length: round.order.length as RoundLength });
         },
       });
     }
     items.push({ caption: round ? 'SAVED AT THE LAST HOLE' : '', value: 'QUIT TO TITLE', onTap: () => this.title() });
     this.game.push(
       new MenuScene({
-        overlay: { title: 'PAUSED', sub: round ? `HOLE ${currentHoleIndex(round) + 1} OF ${round.order.length} · ${this.course.name}` : 'PRACTICE FIELD' },
+        overlay: { title: 'PAUSED', sub: round ? `${MODE_NAME[roundMode(round)]} · HOLE ${currentHoleIndex(round) + 1} OF ${round.order.length}` : 'PRACTICE FIELD' },
         top: 88,
         items,
       }),
@@ -319,6 +769,9 @@ export class App {
       ['GAME DESIGN, CODE AND PIXELS', PAL.haze],
       ['MADE FOR THIS PROJECT', PAL.ink],
       ['', ''],
+      ['CHASERS AND LEAGUE REGULARS', PAL.haze],
+      ['ALL CHARACTERS ARE FICTIONAL', PAL.ink],
+      ['', ''],
       ['SOUND', PAL.haze],
       ['SYNTHESISED IN YOUR BROWSER', PAL.ink],
       ['', ''],
@@ -332,11 +785,11 @@ export class App {
     ];
     this.game.set(
       new MenuScene({
-        top: 268,
+        top: 274,
         items: [{ caption: '', value: 'BACK', onTap: () => this.title() }],
         draw: (ctx, t) => {
           drawLanterns(ctx, t);
-          lines.forEach(([s, c], i) => s && drawText(ctx, s, VIEW_W / 2, 50 + i * 12, c, 'center'));
+          lines.forEach(([s, c], i) => s && drawText(ctx, s, VIEW_W / 2, 36 + i * 12, c, 'center'));
         },
       }),
     );

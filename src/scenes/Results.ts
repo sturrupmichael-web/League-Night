@@ -1,4 +1,6 @@
-/** End-of-round card: scorecard and stats. */
+/** End-of-round card: tonight's summary, scorecard, stats and the highlight reel. */
+import type { CredLine } from '../game/cred';
+import type { Highlight } from '../game/highlights';
 import type { CourseDef } from '../game/hole';
 import { cardTotals, type RoundState } from '../game/round';
 import { formatToPar } from '../game/rules';
@@ -9,22 +11,55 @@ import { PAL } from '../render/palette';
 import { drawButton } from '../ui/button';
 import { drawBigText, drawLanterns, MenuScene } from '../ui/menu';
 
+export interface NightSummary {
+  headline: string;
+  sub?: string;
+  /** Standings or skins rows. */
+  table?: { left: string; right: string; you?: boolean }[];
+  cred: CredLine[];
+  unlocks: string[];
+}
+
+type Tab = 'night' | 'card' | 'stats' | 'reel';
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'night', label: 'TONIGHT' },
+  { id: 'card', label: 'CARD' },
+  { id: 'stats', label: 'NUMBERS' },
+  { id: 'reel', label: 'REEL' },
+];
+
 export class ResultsScene extends MenuScene {
-  private tab: 'card' | 'stats' = 'card';
+  private tab: Tab = 'night';
+  private tabCount = TABS.length;
 
   constructor(
     private round: RoundState,
     private course: CourseDef,
-    actions: { again: () => void; title: () => void },
+    actions: { again: () => void; title: () => void; reel: () => void },
+    private night: NightSummary,
+    private highlights: Highlight[],
   ) {
     super({ items: [], top: 0 });
     const y = VIEW_H - 26;
+    const tw = 42;
     this.buttons = [
-      { x: 6, y: 52, w: 82, h: 18, caption: () => '', value: () => 'SCORECARD', onTap: () => (this.tab = 'card'), enabled: () => true },
-      { x: 92, y: 52, w: 82, h: 18, caption: () => '', value: () => 'THE NUMBERS', onTap: () => (this.tab = 'stats'), enabled: () => true },
-      { x: 6, y, w: 82, h: 22, caption: () => 'SAME AGAIN', value: () => 'NEW ROUND', onTap: actions.again },
+      ...TABS.map((t, i) => ({ x: 4 + i * (tw + 1), y: 52, w: tw, h: 18, caption: () => '', value: () => t.label, onTap: () => (this.tab = t.id), enabled: () => true })),
+      {
+        x: 40, y: 236, w: 100, h: 22,
+        caption: () => `${this.highlights.length} CLIP${this.highlights.length === 1 ? '' : 'S'}`,
+        value: () => 'PLAY THE REEL',
+        onTap: () => this.tab === 'reel' && this.highlights.length > 0 && actions.reel(),
+        enabled: () => this.tab === 'reel' && this.highlights.length > 0,
+      },
+      { x: 6, y, w: 82, h: 22, caption: () => 'SAME AGAIN', value: () => 'PLAY AGAIN', onTap: actions.again },
       { x: 92, y, w: 82, h: 22, caption: () => 'BACK TO', value: () => 'TITLE', onTap: actions.title },
     ];
+  }
+
+  // The reel button only exists on the reel tab.
+  down(p: Parameters<MenuScene['down']>[0]) {
+    if (this.tab !== 'reel' && p.y >= 236 && p.y < 258 && p.x >= 40 && p.x < 140) return;
+    super.down(p);
   }
 
   render(ctx: CanvasRenderingContext2D) {
@@ -33,19 +68,76 @@ export class ResultsScene extends MenuScene {
     drawLanterns(ctx, this.time, -8);
     const r = this.round;
     const t = cardTotals(r.card);
-    drawText(ctx, `${this.course.name} · ${r.order.length} HOLES`, VIEW_W / 2, 18, PAL.inkDim, 'center');
+    drawText(ctx, `${this.course.name} · ${r.order.length} HOLE${r.order.length === 1 ? '' : 'S'}`, VIEW_W / 2, 18, PAL.inkDim, 'center');
     drawBigText(ctx, `${formatToPar(t.toPar)}  (${t.strokes})`, VIEW_W / 2, 28, t.toPar <= 0 ? PAL.amber : PAL.ink);
-    for (const b of this.buttons.slice(0, 2)) {
-      const on = (b === this.buttons[0]) === (this.tab === 'card');
+    this.buttons.slice(0, this.tabCount).forEach((b, i) => {
+      const on = TABS[i].id === this.tab;
       ctx.fillStyle = on ? PAL.night3 : PAL.night2;
       ctx.fillRect(b.x, b.y, b.w, b.h);
       ctx.fillStyle = on ? PAL.amber : PAL.dusk;
       ctx.fillRect(b.x, b.y + b.h - 1, b.w, 1);
       drawText(ctx, b.value(), b.x + b.w / 2, b.y + 7, on ? PAL.ink : PAL.haze, 'center');
-    }
+    });
     if (this.tab === 'card') this.drawCard(ctx);
-    else this.drawStats(ctx);
-    for (const b of this.buttons.slice(2)) drawButton(ctx, b);
+    else if (this.tab === 'stats') this.drawStats(ctx);
+    else if (this.tab === 'night') this.drawNight(ctx);
+    else this.drawReel(ctx);
+    const rest = this.buttons.slice(this.tabCount);
+    if (this.tab === 'reel') drawButton(ctx, rest[0]);
+    for (const b of rest.slice(1)) drawButton(ctx, b);
+  }
+
+  private drawNight(ctx: CanvasRenderingContext2D) {
+    const n = this.night;
+    let y = 78;
+    drawText(ctx, n.headline, VIEW_W / 2, y, PAL.amber, 'center');
+    y += 9;
+    if (n.sub) {
+      drawText(ctx, n.sub, VIEW_W / 2, y, PAL.inkDim, 'center');
+      y += 9;
+    }
+    y += 3;
+    for (const row of (n.table ?? []).slice(0, 9)) {
+      if (row.you) {
+        ctx.fillStyle = PAL.night3;
+        ctx.fillRect(4, y - 2, VIEW_W - 8, 9);
+      }
+      drawText(ctx, row.left, 8, y, row.you ? PAL.amber : PAL.ink);
+      drawText(ctx, row.right, VIEW_W - 8, y, row.you ? PAL.amber : PAL.inkDim, 'right');
+      y += 9;
+    }
+    y += 4;
+    ctx.fillStyle = PAL.night3;
+    ctx.fillRect(4, y, VIEW_W - 8, 1);
+    y += 5;
+    const total = n.cred.reduce((a, l) => a + l.cred, 0);
+    for (const l of n.cred.slice(0, 6)) {
+      drawText(ctx, l.label, 8, y, PAL.haze);
+      drawText(ctx, `+${l.cred}`, VIEW_W - 8, y, PAL.ink, 'right');
+      y += 8;
+    }
+    drawText(ctx, 'CRED EARNED', 8, y + 1, PAL.amber);
+    drawText(ctx, `+${total}`, VIEW_W - 8, y + 1, PAL.amber, 'right');
+    y += 12;
+    for (const u of n.unlocks.slice(0, 3)) {
+      drawText(ctx, `NEW: ${u}`, VIEW_W / 2, y, PAL.white, 'center');
+      y += 8;
+    }
+  }
+
+  private drawReel(ctx: CanvasRenderingContext2D) {
+    let y = 84;
+    drawText(ctx, 'TONIGHT ON THE REEL', VIEW_W / 2, y, PAL.amber, 'center');
+    y += 14;
+    if (!this.highlights.length) drawText(ctx, 'NOTHING WORTH REPLAYING. YET.', VIEW_W / 2, y + 20, PAL.inkDim, 'center');
+    this.highlights.forEach((h, i) => {
+      ctx.fillStyle = i % 2 ? PAL.night1 : PAL.night2;
+      ctx.fillRect(8, y - 3, VIEW_W - 16, 26);
+      drawText(ctx, h.title, 14, y + 2, PAL.amber);
+      drawText(ctx, h.sub, 14, y + 12, PAL.ink);
+      y += 30;
+    });
+    drawText(ctx, 'REPLAYED FROM YOUR INPUTS WITH THE SAME SIM', VIEW_W / 2, 224, PAL.dusk, 'center');
   }
 
   private drawCard(ctx: CanvasRenderingContext2D) {

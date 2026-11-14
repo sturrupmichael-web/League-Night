@@ -2,14 +2,41 @@
  * A round: which holes, in what order, the card so far, mulligans left.
  * Plain data so it can be saved as JSON after every hole.
  */
+import type { ThrowInput } from '../sim/flight';
+import type { Vec2 } from '../sim/math';
+import type { SwipeRead } from '../sim/putt';
+import type { Wind } from '../sim/wind';
 import type { CourseDef } from './hole';
+import type { SkinsRule } from './skins';
 
 export type RoundLength = 3 | 9 | 18;
+/** casual = New Round, cup = the Lantern Cup championship, skins = skins vs one rival. */
+export type RoundMode = 'casual' | 'cup' | 'skins';
+/** throw = watch every rival throw; hole = just see their hole score. */
+export type Pacing = 'throw' | 'hole';
 
 export interface RoundSettings {
   courseId: string;
   length: RoundLength;
   hand: 'right' | 'left';
+  mode?: RoundMode;
+  chaserId?: string;
+  pacing?: Pacing;
+  /** Skins: who you are playing and how ties work. */
+  rivalId?: string;
+  skinsRule?: SkinsRule;
+}
+
+/** Enough to re-simulate a throw exactly (highlight replays, later async matches). */
+export type ThrowReplay =
+  | { t: 'throw'; input: ThrowInput; seed: number }
+  | { t: 'putt'; lie: Vec2; read: Extract<SwipeRead, { cancel: false }>; seed: number };
+
+/** A rival's running card. */
+export interface RivalCard {
+  id: string;
+  name: string;
+  scores: number[];
 }
 
 /** One logged throw, for stats and (later) highlight replays. */
@@ -28,6 +55,7 @@ export interface ThrowLog {
   made: boolean;
   /** Surface the disc stopped on (before any drop). */
   surface: string;
+  replay?: ThrowReplay;
 }
 
 export interface HoleRecord {
@@ -38,6 +66,8 @@ export interface HoleRecord {
   pickedUp: boolean;
   mulligans: number;
   throws: ThrowLog[];
+  /** The hole's wind, so replays fly in the same air. */
+  wind?: Wind;
 }
 
 export interface RoundState {
@@ -49,6 +79,12 @@ export interface RoundState {
   card: HoleRecord[];
   mulligansLeft: number;
   startedAt: number;
+  /** Cup field or skins rival scores, hole by hole. */
+  rivals?: RivalCard[];
+  /** Skins: the player conceded the match. */
+  conceded?: boolean;
+  /** Cred won at the turn minigame. */
+  turn?: { game: string; cred: number };
 }
 
 export const MULLIGANS_PER_ROUND = 3;
@@ -66,7 +102,8 @@ export function newRound(course: CourseDef, settings: RoundSettings, seed: numbe
     settings,
     order: holeOrder(course.holes.length, settings.length),
     card: [],
-    mulligansLeft: MULLIGANS_PER_ROUND,
+    // Mulligans are a casual-round thing: none in the cup or in skins.
+    mulligansLeft: (settings.mode ?? 'casual') === 'casual' ? MULLIGANS_PER_ROUND : 0,
     startedAt: now,
   };
 }
@@ -77,6 +114,14 @@ export const isRoundOver = (r: RoundState) => r.card.length >= r.order.length;
 export function recordHole(r: RoundState, rec: HoleRecord): RoundState {
   if (isRoundOver(r)) return r;
   return { ...r, card: [...r.card, rec], mulligansLeft: Math.max(0, r.mulligansLeft - rec.mulligans) };
+}
+
+export const roundMode = (r: RoundState): RoundMode => r.settings.mode ?? 'casual';
+
+/** Add one hole's scores to each rival card. */
+export function recordRivals(r: RoundState, scores: Record<string, number>): RoundState {
+  if (!r.rivals) return r;
+  return { ...r, rivals: r.rivals.map((c) => (scores[c.id] === undefined ? c : { ...c, scores: [...c.scores, scores[c.id]] })) };
 }
 
 export const roundStrokes = (r: RoundState) => r.card.reduce((a, h) => a + h.strokes, 0);

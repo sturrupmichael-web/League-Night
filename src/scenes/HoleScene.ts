@@ -13,6 +13,8 @@ import { CameraRig } from '../core/camera';
 import type { PointerInfo } from '../core/input';
 import type { Scene } from '../core/scene';
 import { VIEW_H, VIEW_W } from '../core/screen';
+import type { AiHole, AiThrow } from '../game/ai';
+import { holeWind } from '../game/conditions';
 import type { HoleDef } from '../game/hole';
 import { applyThrow, formatToPar, type HoleState, isHoleOver, newHole, SCORE_LABEL, scoreKey } from '../game/rules';
 import type { HoleRecord, ThrowLog } from '../game/round';
@@ -31,6 +33,7 @@ import { makeRng, mixSeed } from '../sim/rng';
 import { makeTerrain, type Terrain } from '../sim/terrain';
 import { simulateThrow, type ThrowResult } from '../sim/throw';
 import { CALM, rollWind, type Wind, windAt, windLabel } from '../sim/wind';
+import type { SwipeRead } from '../sim/putt';
 import { type Button, drawButton, hit } from '../ui/button';
 
 const DISCS = discsJson as Disc[];
@@ -72,7 +75,16 @@ const PUTT_TEXT: Record<PuttOutcome, string> = {
   wide: 'WIDE',
 };
 
-type Mode = 'intro' | 'aim' | 'flight' | 'rest' | 'putting' | 'gimme' | 'done';
+type Mode = 'intro' | 'aim' | 'flight' | 'rest' | 'putting' | 'gimme' | 'rival' | 'done';
+
+/** A rival on the same card (skins, throw by throw). Their hole is decided in advance and played out here. */
+export interface RivalOnCard {
+  name: string;
+  color: string;
+  hole: AiHole;
+  /** Config the rival's hole was simulated with (the base config, no chaser bias). */
+  cfg: Config;
+}
 
 export interface HoleSceneOpts {
   hole: HoleDef;
@@ -91,6 +103,14 @@ export interface HoleSceneOpts {
   onThrow?: (r: ThrowResult) => void;
   onFinish?: (rec: HoleRecord) => void;
   onPause?: () => void;
+  /** Disc dye from the locker; replaces every disc's colour. */
+  dyeColor?: string | null;
+  /** Rival whose throws are shown one by one on this hole. */
+  rival?: RivalOnCard;
+  /** Extra lines for the hole-complete panel (cup standing, skins result). */
+  doneInfo?: (strokes: number) => string[];
+  /** Small tag shown under the hole name in the intro (mode name). */
+  introTag?: string;
 }
 
 type Gesture =
@@ -131,7 +151,10 @@ export class HoleScene implements Scene {
   private time = 0;
   private flash = 0;
 
-  private putt: { proj: PuttProjector; res: PuttResult; t: number; done: boolean } | null = null;
+  private putt: { proj: PuttProjector; res: PuttResult; t: number; done: boolean; read: Extract<SwipeRead, { cancel: false }>; seed: number } | null = null;
+  private rivalNext = 0;
+  private rivalLie: Vec2 = { x: 0, y: 0 };
+  private rivalAnim: { th: AiThrow; path: PathPoint[]; t: number; end: number } | null = null;
   private gimme: { from: Vec2; t: number } | null = null;
   private toast: { title: string; sub: string; t: number; bad: boolean } | null = null;
   private hint: { text: string; t: number } | null = null;
@@ -149,7 +172,8 @@ export class HoleScene implements Scene {
     this.terrain = makeTerrain(this.hole.terrain);
     this.view = new HoleRenderer(this.hole, this.terrain);
     this.state = newHole(this.hole.par, this.hole.tee);
-    this.wind = opts.practice ? CALM : rollWind(makeRng(mixSeed(opts.seed, this.hole.id * 31 + 7)), this.hole.windRange);
+    this.wind = opts.practice ? CALM : holeWind(opts.seed, this.hole);
+    this.rivalLie = { ...this.hole.tee };
     this.rig = new CameraRig({ x: this.hole.tee.x, y: this.hole.tee.y, zoom: AIM_ZOOM, ay: DISC_ANCHOR_Y }, VIEW_W, cfg);
     this.mode = opts.practice ? 'aim' : 'intro';
     if (this.mode === 'intro') {
@@ -242,6 +266,9 @@ export class HoleScene implements Scene {
   get disc(): Disc {
     return DISCS[this.discIdx];
   }
+  private get discColor(): string {
+    return this.opts.dyeColor ?? this.disc.color;
+  }
   get style(): Style {
     return STYLES[this.styleIdx];
   }
@@ -255,7 +282,7 @@ export class HoleScene implements Scene {
 
   private record(): HoleRecord {
     const s = this.state;
-    return { holeId: this.hole.id, par: s.par, strokes: s.strokes, penalties: s.penalties, pickedUp: s.pickedUp, mulligans: this.mullsUsed, throws: this.logs };
+    return { holeId: this.hole.id, par: s.par, strokes: s.strokes, penalties: s.penalties, pickedUp: s.pickedUp, mulligans: this.mullsUsed, throws: this.logs, wind: this.opts.practice ? undefined : this.wind };
   }
 
   private mullsLeft() {
@@ -389,6 +416,10 @@ export class HoleScene implements Scene {
     }
     if (this.mode === 'putting' && this.putt) {
       this.putt.t = this.putt.res.path[this.putt.res.path.length - 1].t;
+      return;
+    }
+    if (this.mode === 'rival' && this.rivalAnim) {
+      this.rivalAnim.t = this.rivalAnim.end; // tap to skip
       return;
     }
     if (this.mode === 'gimme') return;
@@ -564,7 +595,7 @@ export class HoleScene implements Scene {
     sfx.play(g.kind === 'holed' ? 'chains' : g.kind === 'water' ? 'splash' : g.kind === 'ob' ? 'ob' : 'tap');
     const from = this.distToBasket();
     this.state = applyThrow(this.state, this.cfg, { penalty: g.penalty, holed: g.kind === 'holed', lie: g.lie });
-    this.log({ kind: 'throw', fromFt: from, toFt: this.distToBasket(), distanceFt: r.total, penalty: g.penalty, made: g.kind === 'holed', surface: g.surface });
+    this.log({ kind: 'throw', fromFt: from, toFt: this.distToBasket(), distanceFt: r.total, penalty: g.penalty, made: g.kind === 'holed', surface: g.surface, replay: { t: 'throw', input: r.input, seed: r.seed } });
   }
 
   private puttFromSwipe(pts: SwipePoint[]) {
@@ -576,9 +607,10 @@ export class HoleScene implements Scene {
     }
     const proj = this.projector();
     const w = windAt(this.wind, 0, 0, this.cfg.windScale);
-    const res = resolvePutt(read, { distance: proj.distance, rise: proj.rise, crosswind: proj.crosswind(w) }, makeRng(this.nextSeed()), this.cfg);
+    const seed = this.nextSeed();
+    const res = resolvePutt(read, { distance: proj.distance, rise: proj.rise, crosswind: proj.crosswind(w) }, makeRng(seed), this.cfg);
     this.undo.push({ state: this.state, logs: [...this.logs] });
-    this.putt = { proj, res, t: 0, done: false };
+    this.putt = { proj, res, t: 0, done: false, read, seed };
     this.mode = 'putting';
     sfx.play('putt');
     this.toast = null;
@@ -601,7 +633,8 @@ export class HoleScene implements Scene {
     sfx.play(res.made ? 'chains' : penalty ? 'splash' : 'land');
     const from = proj.distance;
     this.state = applyThrow(this.state, this.cfg, { penalty, holed: res.made, lie });
-    this.log({ kind: 'putt', fromFt: from, toFt: this.distToBasket(), distanceFt: dist(this.putt!.proj.lie, restW), penalty, made: res.made, surface: surf });
+    const pt = this.putt!;
+    this.log({ kind: 'putt', fromFt: from, toFt: this.distToBasket(), distanceFt: dist(pt.proj.lie, restW), penalty, made: res.made, surface: surf, replay: { t: 'putt', lie: { ...pt.proj.lie }, read: pt.read, seed: pt.seed } });
     this.mode = 'rest';
     this.restTimer = 0;
   }
@@ -633,14 +666,14 @@ export class HoleScene implements Scene {
         this.current = null;
         return;
       }
-      this.mode = 'done';
-      this.toast = null;
-      const d = this.state.strokes - this.state.par;
-      sfx.play(this.state.pickedUp || d >= 2 ? 'bad' : d <= -1 ? 'good' : 'tap');
+      this.current = null;
+      if (this.rivalTurn()) return;
+      this.toDone();
       return;
     }
     this.mode = 'aim';
     this.current = null;
+    if (this.rivalTurn()) return;
     // Inside putting range, hand the player their putter.
     const d = this.distToBasket();
     if (d <= this.cfg.puttRangeFt && d > this.cfg.gimmeFt && this.disc.type !== 'putter') this.discIdx = this.lastPutterIdx;
@@ -650,6 +683,76 @@ export class HoleScene implements Scene {
     this.mode = 'aim';
     this.rig.snapBack();
     this.toast = null;
+  }
+
+  private toDone() {
+    this.mode = 'done';
+    this.toast = null;
+    const d = this.state.strokes - this.state.par;
+    sfx.play(this.state.pickedUp || d >= 2 ? 'bad' : d <= -1 ? 'good' : 'tap');
+  }
+
+  // ---------- Rival on the card ----------
+
+  private rivalDone() {
+    const r = this.opts.rival;
+    return !r || this.rivalNext >= r.hole.throws.length;
+  }
+
+  /** Farthest from the basket throws first; at the tee the player has the honour. */
+  private rivalDue() {
+    if (this.rivalDone()) return false;
+    if (isHoleOver(this.state)) return true;
+    return dist(this.rivalLie, this.hole.basket) > this.distToBasket() + 0.01;
+  }
+
+  /** Start the rival's next throw if it is their turn. Returns true if one started. */
+  private rivalTurn(): boolean {
+    if (!this.rivalDue()) return false;
+    const r = this.opts.rival!;
+    const th = r.hole.throws[this.rivalNext];
+    let path: PathPoint[];
+    if (th.kind === 'throw' && th.input && th.discId) {
+      const disc = DISCS.find((d) => d.id === th.discId) ?? DISCS[4];
+      path = simulateThrow(th.input, disc, { terrain: this.terrain, wind: this.wind, basket: this.hole.basket }, th.seed ?? 1, r.cfg).path;
+    } else {
+      // Putts and tap-ins: a short hop from the lie to where it finished.
+      const n = 24;
+      const T = th.kind === 'gimme' ? 0.4 : 0.9;
+      path = [];
+      for (let i = 0; i <= n; i++) {
+        const f = i / n;
+        const x = lerp(th.from.x, th.to.x, f);
+        const y = lerp(th.from.y, th.to.y, f);
+        path.push({ x, y, z: this.terrain.height(x, y) + Math.sin(f * Math.PI) * (th.kind === 'gimme' ? 2 : 4), t: f * T });
+      }
+    }
+    this.rivalAnim = { th, path, t: 0, end: path[path.length - 1].t };
+    this.mode = 'rival';
+    this.toast = { title: `${r.name} IS UP`, sub: th.kind === 'throw' ? `${Math.round(th.fromFt)} FT OUT` : `${Math.round(th.fromFt)} FT PUTT`, t: 0, bad: false };
+    sfx.play(th.kind === 'throw' ? 'throw' : 'putt');
+    return true;
+  }
+
+  private endRivalThrow() {
+    const a = this.rivalAnim!;
+    const r = this.opts.rival!;
+    const th = a.th;
+    this.rivalNext++;
+    this.rivalLie = { ...th.to };
+    let title: string;
+    if (th.made) title = th.kind === 'throw' ? `${r.name} HOLES OUT!` : `${r.name} DROPS IT`;
+    else if (th.penalty) title = `${r.name} · PENALTY +${th.penalty}`;
+    else title = th.kind === 'throw' ? `${r.name} · ${Math.round(th.toFt)} FT TO GO` : `${r.name} MISSES`;
+    const strokes = r.hole.throws.slice(0, this.rivalNext).reduce((n, t) => n + 1 + t.penalty, 0);
+    this.toast = { title, sub: `${r.name} · ${strokes} THROW${strokes === 1 ? '' : 'S'}`, t: 0, bad: false };
+    if (th.made) {
+      this.flash = 0.8;
+      sfx.play('chains');
+    } else sfx.play(th.penalty ? 'splash' : 'land');
+    this.rivalAnim = null;
+    this.restTimer = 0;
+    this.mode = 'rest';
   }
 
   // ---------- Update ----------
@@ -691,6 +794,12 @@ export class HoleScene implements Scene {
         if (pt.t >= pt.res.path[pt.res.path.length - 1].t + 0.3) this.endPutt();
         break;
       }
+      case 'rival': {
+        const a = this.rivalAnim!;
+        a.t += dt;
+        if (a.t >= a.end + 0.2) this.endRivalThrow();
+        break;
+      }
       case 'gimme':
         this.gimme!.t += dt;
         if (this.gimme!.t > 0.5) this.endGimme();
@@ -702,7 +811,10 @@ export class HoleScene implements Scene {
       default:
     }
 
-    if (this.mode === 'flight' || (this.mode === 'rest' && this.current)) {
+    if (this.mode === 'rival' && this.rivalAnim) {
+      const p = samplePath(this.rivalAnim.path, this.rivalAnim.t);
+      this.rig.setFollow({ x: p.x, y: p.y, zoom: FLIGHT_ZOOM, ay: 150 });
+    } else if (this.mode === 'flight' || (this.mode === 'rest' && this.current)) {
       const p = this.discPosNow();
       this.rig.setFollow({ x: p.x, y: p.y, zoom: FLIGHT_ZOOM, ay: 150 });
     } else {
@@ -771,7 +883,9 @@ export class HoleScene implements Scene {
     const alt = Math.max(0, p.z - this.terrain.height(p.x, p.y));
     const wet = this.mode === 'rest' && this.current?.ground.kind === 'water';
     const holedNow = this.mode === 'rest' && this.state.holed;
-    if (!holedNow && (!wet || Math.floor(this.time * 6) % 2 === 0)) drawDisc(ctx, ds.x, ds.y, alt * altScale, this.disc.color, 1 + alt / 25);
+    if (!holedNow && (!wet || Math.floor(this.time * 6) % 2 === 0)) drawDisc(ctx, ds.x, ds.y, alt * altScale, this.discColor, 1 + alt / 25);
+
+    this.drawRival(ctx, cam);
 
     if (this.mode === 'aim' && !this.gesture) {
       const r = 6 + Math.sin(this.time * (this.inGimme() ? 8 : 4)) * 1.5;
@@ -784,10 +898,33 @@ export class HoleScene implements Scene {
     }
   }
 
+  private drawRival(ctx: CanvasRenderingContext2D, cam: Camera) {
+    const r = this.opts.rival;
+    if (!r) return;
+    let p: PathPoint;
+    if (this.rivalAnim) p = samplePath(this.rivalAnim.path, this.rivalAnim.t);
+    else {
+      if (this.rivalNext > 0 && r.hole.throws[this.rivalNext - 1].made) return; // in the basket
+      p = { x: this.rivalLie.x, y: this.rivalLie.y, z: this.terrain.height(this.rivalLie.x, this.rivalLie.y), t: 0 };
+    }
+    if (this.rivalAnim) {
+      ctx.fillStyle = 'rgba(244,233,205,0.3)';
+      for (const q of this.rivalAnim.path) {
+        if (q.t > this.rivalAnim.t) break;
+        const s = worldToScreen(cam, q.x, q.y);
+        ctx.fillRect(Math.round(s.x), Math.round(s.y - (q.z - this.terrain.height(q.x, q.y)) * 0.5 * cam.zoom), 1, 1);
+      }
+    }
+    const s = worldToScreen(cam, p.x, p.y);
+    const alt = Math.max(0, p.z - this.terrain.height(p.x, p.y));
+    drawDisc(ctx, s.x, s.y, alt * 0.5 * cam.zoom, r.color, 1 + alt / 25);
+    if (!this.rivalAnim) drawTextShadow(ctx, r.name.split(' ')[0], s.x, s.y + 4, r.color, PAL.night0, 'center');
+  }
+
   private renderPuttView(ctx: CanvasRenderingContext2D) {
     const proj = this.putt?.proj ?? this.projector();
     const disc: PuttPoint | null = this.putt ? samplePutt(this.putt.res.path, this.putt.t) : null;
-    drawPuttScene(ctx, proj, { bottom: TRAY_Y, time: this.time, disc, discColor: this.disc.color, flash: this.flash, showHandDisc: this.mode === 'aim' });
+    drawPuttScene(ctx, proj, { bottom: TRAY_Y, time: this.time, disc, discColor: this.discColor, flash: this.flash, showHandDisc: this.mode === 'aim' });
 
     // Read of the putt: distance, slope, wind.
     const y = HUD_H + 4;
@@ -919,7 +1056,7 @@ export class HoleScene implements Scene {
     ctx.fillStyle = PAL.night3;
     ctx.fillRect(0, TRAY_Y, VIEW_W, 1);
     for (const b of this.buttons) drawButton(ctx, b);
-    ctx.fillStyle = this.disc.color;
+    ctx.fillStyle = this.discColor;
     ctx.fillRect(6, TRAY_Y + 8, 3, 2);
   }
 
@@ -930,6 +1067,7 @@ export class HoleScene implements Scene {
     drawText(ctx, `HOLE ${this.opts.holeNumber} · PAR ${h.par} · ${h.lengthFt} FT`, VIEW_W / 2, y + 6, PAL.amber, 'center');
     drawText(ctx, h.name, VIEW_W / 2, y + 17, PAL.ink, 'center');
     if (h.note) drawText(ctx, h.note, VIEW_W / 2, y + 28, PAL.inkDim, 'center');
+    if (this.opts.introTag) drawTextShadow(ctx, this.opts.introTag, VIEW_W / 2, y - 10, PAL.amber, PAL.night0, 'center');
     drawText(ctx, 'TAP TO TEE OFF', VIEW_W / 2, y + 40, PAL.haze, 'center');
   }
 
@@ -946,6 +1084,8 @@ export class HoleScene implements Scene {
     drawText(ctx, `${s.strokes} THROWS · PAR ${s.par}`, VIEW_W / 2, y + 40, PAL.ink, 'center');
     if (s.penalties) drawText(ctx, `INCLUDES ${s.penalties} PENALTY`, VIEW_W / 2, y + 50, PAL.red, 'center');
     drawText(ctx, `ROUND ${formatToPar(this.opts.roundToPar + s.strokes - s.par)}`, VIEW_W / 2, y + 62, PAL.haze, 'center');
+    const extra = this.opts.doneInfo?.(s.strokes) ?? [];
+    extra.slice(0, 2).forEach((line, i) => drawText(ctx, line, VIEW_W / 2, y + 70 + i * 8, i === 0 ? PAL.amber : PAL.inkDim, 'center'));
     for (const b of this.doneButtons) drawButton(ctx, b);
   }
 }

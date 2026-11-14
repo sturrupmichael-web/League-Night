@@ -14,6 +14,7 @@ const page = `<title>League Night</title>
 ${css}
 </style>
 ${body}
+<script>document.documentElement.dataset.singleFile = '1';</script>
 <script type="module">
 ${js}
 </script>

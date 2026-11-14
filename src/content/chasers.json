@@ -1,0 +1,58 @@
+[
+  {
+    "id": "mae",
+    "name": "MAE OKAFOR",
+    "title": "THE SCOREKEEPER",
+    "hand": "right",
+    "stats": { "power": -1, "accuracy": 2, "putting": 1, "wind": 0 },
+    "colors": { "skin": "#8a5a3c", "hair": "#1a1220", "outfits": [["#3f7fb0", "#f4e9cd"], ["#c2453a", "#1a1220"], ["#f2b544", "#2c5239"]] },
+    "lock": null,
+    "story": [
+      "MAE HAS KEPT THE LEAGUE CARD FOR SIX SEASONS. CLIPBOARD, TWO PENCILS, ONE SPARE. SHE KNOWS EVERYONE'S HANDICAP AND, QUIETLY, EVERYONE'S EXCUSES.",
+      "THIS SEASON SHE HANDED THE CLIPBOARD TO THE NEW GUY. SHE WANTS TO FIND OUT WHAT HAPPENS WHEN SHE PLAYS FOR HERSELF INSTEAD OF COUNTING FOR EVERYONE ELSE.",
+      "AT THE FINALE SHE SINKS THE LAST PUTT, WALKS TO THE BOARD AND WRITES HER OWN NAME AT THE TOP. NEATLY. IN PEN."
+    ]
+  },
+  {
+    "id": "dez",
+    "name": "DEZ PRUITT",
+    "title": "THE BOMBER",
+    "hand": "right",
+    "stats": { "power": 2, "accuracy": -1, "putting": -1, "wind": 1 },
+    "colors": { "skin": "#c98d64", "hair": "#6b3b1f", "outfits": [["#e0533f", "#352b45"], ["#2c5239", "#f2b544"], ["#f4e9cd", "#5b4a6e"]] },
+    "lock": null,
+    "story": [
+      "DEZ THROWS FAR. FARTHER THAN THE FAIRWAY, SOMETIMES FARTHER THAN THE PARK. THE GROUNDSKEEPER HAS A BOX OF HIS DISCS IN THE SHED.",
+      "HE HAS NEVER WON A LEAGUE NIGHT. HIS DRIVES ARE LEGEND; HIS PUTTING IS A RUMOUR. THIS YEAR HE IS PRACTISING TEN-FOOTERS IN HIS DRIVEWAY.",
+      "AT THE FINALE HE LAYS UP ON THE LAST HOLE. NOBODY BELIEVES IT. HE TAPS IN FOR PAR AND THE WHOLE CARD CHEERS LIKE HE ACED IT."
+    ]
+  },
+  {
+    "id": "june",
+    "name": "JUNE LINDQVIST",
+    "title": "THE WEATHER WATCHER",
+    "hand": "left",
+    "stats": { "power": 0, "accuracy": 0, "putting": 0, "wind": 2 },
+    "colors": { "skin": "#e8c4a0", "hair": "#d8b45a", "outfits": [["#7cc4d8", "#352b45"], ["#8fd16a", "#14291f"], ["#c792ea", "#f4e9cd"]] },
+    "lock": { "kind": "rounds", "n": 1, "text": "FINISH ONE ROUND" },
+    "story": [
+      "JUNE CARRIES A POCKET ANEMOMETER AND A NOTEBOOK OF EVERY GUST ON EVERY HOLE SINCE SHE MOVED TO TOWN. SHE THROWS LEFTY AND DOES NOT APOLOGISE FOR IT.",
+      "SHE LEARNED TO READ THE TREETOPS FROM HER GRANDMOTHER, WHO SAILED. THE WIND IS NOT YOUR ENEMY, SHE SAYS. IT IS JUST NOT YOUR FRIEND YET.",
+      "ON THE STORMIEST FINALE IN LEAGUE HISTORY, EVERYONE ELSE PUTS AWAY THEIR DRIVERS. JUNE SMILES AND THROWS INTO IT."
+    ]
+  },
+  {
+    "id": "hal",
+    "name": "HAL BRISCOE",
+    "title": "THE FOUNDER",
+    "hand": "right",
+    "stats": { "power": -1, "accuracy": 1, "putting": 2, "wind": 1 },
+    "colors": { "skin": "#b07a58", "hair": "#d9d4cc", "outfits": [["#5b4a6e", "#f2b544"], ["#2c5f86", "#f4e9cd"], ["#3a2b36", "#e0533f"]] },
+    "lock": { "kind": "cred", "n": 600, "text": "WIN THE LANTERN CUP OR EARN 600 CRED" },
+    "story": [
+      "HAL HUNG THE FIRST STRING OF LANTERNS IN THE PARK THIRTY YEARS AGO, SO FOUR FRIENDS COULD FINISH A ROUND AFTER WORK. THAT WAS THE FIRST LEAGUE NIGHT.",
+      "HIS ARM IS NOT WHAT IT WAS. HIS PUTTER IS EXACTLY WHAT IT WAS. HE STILL BRINGS THE THERMOS AND STILL READS THE RULES OUT LOUD AT THE FIRST TEE.",
+      "THIS IS HIS LAST SEASON ON THE CARD. HE DOES NOT WANT A SPEECH. HE WANTS ONE MORE CLEAN ROUND UNDER THE LANTERNS, AND MAYBE THE CUP."
+    ]
+  }
+]

@@ -13,6 +13,8 @@ export interface MenuItem {
   value: string | (() => string);
   onTap: () => void;
   enabled?: () => boolean;
+  /** Place this button somewhere other than the main column. */
+  box?: { x: number; y: number; w: number; h?: number };
 }
 
 export interface MenuOpts {
@@ -39,11 +41,12 @@ export class MenuScene implements Scene {
     this.overlay = !!opts.overlay;
     const w = opts.width ?? 120;
     const gap = opts.gap ?? 26;
-    this.buttons = opts.items.map((it, i) => ({
-      x: Math.round((VIEW_W - w) / 2),
-      y: opts.top + i * gap,
-      w,
-      h: 22,
+    let row = 0;
+    this.buttons = opts.items.map((it) => ({
+      x: it.box ? it.box.x : Math.round((VIEW_W - w) / 2),
+      y: it.box ? it.box.y : opts.top + row++ * gap,
+      w: it.box ? it.box.w : w,
+      h: it.box?.h ?? 22,
       caption: fn(it.caption),
       value: fn(it.value),
       onTap: it.onTap,
@@ -82,7 +85,7 @@ export class MenuScene implements Scene {
     if (this.opts.overlay) {
       ctx.fillStyle = 'rgba(13,11,19,0.75)';
       ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-      const n = this.buttons.length;
+      const n = this.opts.items.filter((it) => !it.box).length;
       const top = this.opts.top - 34;
       const h = 34 + n * (this.opts.gap ?? 26) + 6;
       panel(ctx, 16, top, VIEW_W - 32, h, PAL.night1, PAL.amber);

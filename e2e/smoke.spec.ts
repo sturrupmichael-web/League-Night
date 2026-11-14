@@ -118,3 +118,39 @@ test('boots, plays a hole, autosaves and offers Continue', async ({ page }) => {
   expect(holeNo).toBe(2);
   expect(errors).toEqual([]);
 });
+
+for (const mode of ['cup', 'skins'] as const) {
+  test(`plays a hole of ${mode === 'cup' ? 'the Lantern Cup' : 'skins (throw by throw)'} with AI rivals`, async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    await page.goto('/');
+    await page.evaluate(() => localStorage.clear());
+    await page.reload();
+    await page.waitForTimeout(400);
+    await tap(page, mode === 'cup' ? /THE LANTERN CUP/ : /^SKINS$/);
+    await tap(page, /9 HOLES/);
+    await tap(page, /18 HOLES/); // -> 3 holes
+    await tap(page, /TEE OFF/);
+
+    await playHole(page);
+    if (mode === 'skins') {
+      // Throw by throw: every rival throw was shown on this hole.
+      const r = await page.evaluate(() => {
+        const sc = (window as any).leagueNight.scene;
+        return { shown: sc.rivalNext, total: sc.opts.rival.hole.throws.length };
+      });
+      expect(r.shown).toBe(r.total);
+    }
+    await tap(page, /NEXT HOLE/);
+    // The leaderboard / skins board, then on to hole 2.
+    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('leaguenight.save')!));
+    expect(saved.round.settings.mode).toBe(mode);
+    expect(saved.round.mulligansLeft).toBe(0);
+    expect(saved.round.rivals).toHaveLength(mode === 'cup' ? 8 : 1);
+    for (const r of saved.round.rivals) expect(r.scores).toHaveLength(1);
+    await tap(page, /NEXT HOLE/);
+    const holeNo = await page.evaluate(() => (window as any).leagueNight.scene.opts.holeNumber);
+    expect(holeNo).toBe(2);
+    expect(errors).toEqual([]);
+  });
+}

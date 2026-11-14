@@ -10,14 +10,21 @@ Built with Vite + TypeScript, rendered to a single 180×320 canvas, integer-scal
 ```bash
 npm install
 npm run dev -- --host     # prints a LAN URL you can open on your phone
-npm test                  # Vitest: flight, ground, putting, rules, rounds, stats, saves, hole loader
-npm run test:e2e          # Playwright: boots, plays a hole, checks autosave and Continue
+npm test                  # Vitest: flight, ground, putting, rules, rounds, stats, saves, AI, modes
+npm run test:e2e          # Playwright: a casual hole + autosave, a Lantern Cup hole, a skins hole
+node scripts/make-icons.cjs  # regenerate the PWA icons in public/icons
 npm run build             # type-check, then static build into dist/
 npm run build:single      # also writes dist/league-night-single.html (one self-contained file)
 ```
 
 **On a phone without a laptop:** the latest build is published as a private test page in the project
 thread. It opens on a small test menu (holes, practice field, tuning sliders).
+
+**Hole editor (dev only):** open `?editor`. Place the tee, basket, polygons, trees and hills on a
+grid, then COPY JSON / DOWNLOAD, or TEST PLAY to play it immediately (BACK TO EDITOR returns).
+
+**Offline:** the production build registers `sw.js`; after one visit the game plays offline and
+can be added to the home screen (manifest + icons in `public/`).
 
 Add `?dev=1` to the URL for the tuning panel (tap **DEV** top-left). Slider changes apply to the
 next throw and persist in that browser; **Copy changes** gives you JSON to paste back into
@@ -101,4 +108,11 @@ src/
 
 ## Status
 
-Phases 1 (core throw), 2 (a playable hole) and 3 (a round) are in. See the project thread for the phase plan.
+Phases 1 (core throw), 2 (a playable hole), 3 (a round) and 4 (modes and meta) are in.
+
+Phase 4 added: AI rivals (`src/game/ai.ts`, same flight sim, skill-scaled noise), the Lantern Cup
+(you vs 8 league regulars, leaderboard each hole), Skins (carry-over or sudden death, watch every
+rival throw or hole by hole, concede), four chasers with stat biases and 3-chapter stories,
+three turn minigames (Bullseye Board, Lost and Found, Skip Contest), Cred tiers that unlock disc
+dyes and outfits, pins and the cup trophy, highlight reels re-simulated from recorded inputs,
+the hole editor and PWA/offline. See the project thread for the phase plan.
