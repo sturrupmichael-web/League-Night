@@ -29,6 +29,7 @@ function fakeFlight(o: { y: number; speed: number; descentDeg: number; bankDeg?:
     landing: { x: 0, y: o.y, z: 0, t: 2, vx: 0, vy: o.speed, vz: -o.speed * Math.tan(d), bank: (o.bankDeg ?? 0) * DEG, descent: d },
     holed: false,
     treeHits: 0,
+    treeHitTimes: [],
     curveSign: o.curveSign ?? 1,
     launchAim: 0,
     launchBank: 0,

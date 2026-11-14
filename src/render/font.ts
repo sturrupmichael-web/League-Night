@@ -87,3 +87,19 @@ export function drawTextShadow(ctx: CanvasRenderingContext2D, s: string, x: numb
   drawText(ctx, s, x + 1, y + 1, shadow, align);
   drawText(ctx, s, x, y, color, align);
 }
+
+/** Greedy word wrap to a pixel width. */
+export function wrapText(s: string, maxWidth: number): string[] {
+  const words = s.toUpperCase().split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let line = '';
+  for (const w of words) {
+    const next = line ? `${line} ${w}` : w;
+    if (textWidth(next) > maxWidth && line) {
+      lines.push(line);
+      line = w;
+    } else line = next;
+  }
+  if (line) lines.push(line);
+  return lines;
+}

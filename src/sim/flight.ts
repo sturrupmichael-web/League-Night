@@ -62,6 +62,8 @@ export interface FlightResult {
   /** True when the disc hit the chains in flight. */
   holed: boolean;
   treeHits: number;
+  /** Times (s) the disc clipped a tree, for sound and effects. */
+  treeHitTimes: number[];
   /** +1 if this hand/style turns toward +x relative to travel, -1 otherwise. */
   curveSign: number;
   /** Actual aim and release bank after any redline wobble. */
@@ -141,6 +143,7 @@ export function simulateFlight(input: ThrowInput, disc: Disc, env: FlightEnv, rn
   const maxBank = cfg.maxBankDeg * DEG;
   let liftMul = hammer ? cfg.hammerLift : 1;
   let treeHits = 0;
+  const treeHitTimes: number[] = [];
   let holed = false;
 
   const path: PathPoint[] = [{ x, y, z, t }];
@@ -226,6 +229,7 @@ export function simulateFlight(input: ThrowInput, disc: Disc, env: FlightEnv, rn
         y = tree.y + ny * (tree.r + 0.05);
         liftMul *= cfg.treeLiftKill;
         treeHits++;
+        treeHitTimes.push(t);
       }
     }
 
@@ -254,6 +258,7 @@ export function simulateFlight(input: ThrowInput, disc: Disc, env: FlightEnv, rn
     landing,
     holed,
     treeHits,
+    treeHitTimes,
     curveSign: sign,
     launchAim: aim,
     launchBank,

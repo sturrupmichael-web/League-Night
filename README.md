@@ -10,7 +10,8 @@ Built with Vite + TypeScript, rendered to a single 180×320 canvas, integer-scal
 ```bash
 npm install
 npm run dev -- --host     # prints a LAN URL you can open on your phone
-npm test                  # Vitest: flight, ground, putting, rules, hole loader
+npm test                  # Vitest: flight, ground, putting, rules, rounds, stats, saves, hole loader
+npm run test:e2e          # Playwright: boots, plays a hole, checks autosave and Continue
 npm run build             # type-check, then static build into dist/
 npm run build:single      # also writes dist/league-night-single.html (one self-contained file)
 ```
@@ -24,15 +25,18 @@ next throw and persist in that browser; **Copy changes** gives you JSON to paste
 
 ## Playing
 
-Opening the game shows a small test menu. Until the title screen arrives in Phase 3, URL options skip it
-(where only a hash can be passed, use `#practice`, `#hole2`, `#dev`):
+The title screen has Continue (when a round is saved), New Round (3, 9 or 18 holes of
+**Lantern Park**; 18 plays the nine twice), Practice Field, How to Play, Settings and Credits.
+The pause button (top left) has sound, hints, start over and quit. The game saves after every hole.
+
+URL options for testing skip the title (where only a hash can be passed, use `#practice`, `#hole2`, `#dev`):
 
 | URL option | What it does |
 | --- | --- |
 | `?practice` | Practice field (no score, distance markers, wind toggle) |
-| `?hole=2` | Start on hole 2 |
-| `?seed=123` | Fix the round's random seed (wind, redline wobble) |
-| `?dev=1` | Tuning panel |
+| `?hole=2` | Play just hole 2 (doesn't touch your saved round) |
+| `?seed=123` | Fix the random seed for `?hole` (wind, redline wobble) |
+| `?dev=1` | Tuning panel (also in Settings) |
 
 **Throwing:** put your finger (or mouse) on the disc, pull **back**, let go. Pull length is power;
 past the red line is the **redline** (more distance, less control). Drag back onto the disc to cancel.
@@ -47,7 +51,7 @@ a slow push takes some away, and a curved swipe bends the putt. Stop your thumb 
 or pull it back down, and nothing happens. Inside 8 ft, just tap the disc.
 
 **Rules:** penalties (water, out of bounds) add a stroke and drop you where the disc went out.
-A hole stops at par + 5.
+A hole stops at par + 5. Casual rounds get 3 mulligans (rewind your last throw).
 
 ## Hole format
 
@@ -73,9 +77,10 @@ and throws a message naming the bad field.
 
 ```
 src/
-  main.ts            boot, fixed 60 Hz loop, scene wiring
+  main.ts            boot, fixed 60 Hz loop, URL options
+  app.ts             screen flow: title, setup, rounds, pause, results, settings, credits; owns the save
   config.ts          every tunable number + dev-panel slider ranges
-  core/              screen scaling, pointer input, loop, scene interface
+  core/              screen scaling, pointer input, loop, scene stack, save file, sound effects
   sim/               pure, deterministic physics (no rendering here)
     flight.ts        disc flight: flight numbers, release angle, style, hand, wind, redline, trees, basket
     ground.ts        sit / skate / roller / water skip / splash / out of bounds / sand / slopes
@@ -83,16 +88,17 @@ src/
     throw.ts         flight + ground from (inputs, seed) — what replays and online play will re-run
     terrain.ts       heightmap sampling, surface polygons, trees
     wind.ts rng.ts   wind model, seeded random
-  game/              hole loader + validation, rules and scoring
+  game/              hole loader + validation, rules and scoring, rounds, stats
   content/           discs.json, courses/*.json, practice field
   render/            palette, 3×5 pixel font, field rasteriser, placeholder sprites
   scenes/HoleScene.ts one hole: top-down throwing, putting view, gimmes, scoring (also runs the practice field)
   core/camera.ts     follow / drag / pinch / overview camera
   render/puttView.ts behind-the-disc putting view
-  ui/                pixel buttons
+  ui/                pixel buttons, menu screens
+  scenes/Results.ts  scorecard and stats; scenes/HowTo.ts six illustrated pages
   dev/panel.ts       ?dev=1 sliders
 ```
 
 ## Status
 
-Phases 1 (core throw) and 2 (a playable hole) are in. See the project thread for the phase plan.
+Phases 1 (core throw), 2 (a playable hole) and 3 (a round) are in. See the project thread for the phase plan.

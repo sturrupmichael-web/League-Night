@@ -17,12 +17,16 @@ const base: HoleJson = {
 describe('hole loader', () => {
   it('loads the bundled course', () => {
     const c = parseCourse(course as CourseJson);
-    expect(c.holes.length).toBeGreaterThan(0);
+    expect(c.holes.length).toBe(9);
     expect(c.par).toBe(c.holes.reduce((a, h) => a + h.par, 0));
     for (const h of c.holes) {
       const t = makeTerrain(h.terrain);
       expect(t.surface(h.tee.x, h.tee.y), `${h.name} tee`).not.toMatch(/water|ob/);
       expect(t.surface(h.basket.x, h.basket.y), `${h.name} basket`).not.toMatch(/water|ob/);
+      for (const tr of h.terrain.trees) {
+        expect(Math.hypot(tr.x - h.tee.x, tr.y - h.tee.y), `${h.name} tree on tee`).toBeGreaterThan(tr.r + 10);
+        expect(Math.hypot(tr.x - h.basket.x, tr.y - h.basket.y), `${h.name} tree on basket`).toBeGreaterThan(tr.r + 8);
+      }
       expect(Math.abs(h.lengthFt - Math.hypot(h.basket.x - h.tee.x, h.basket.y - h.tee.y))).toBeLessThan(h.lengthFt * 0.5);
     }
   });

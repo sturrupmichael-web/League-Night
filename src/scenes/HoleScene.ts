@@ -7,6 +7,7 @@
  *  - Inside gimme range: tap the disc to drop it in.
  */
 import type { Config } from '../config';
+import { sfx } from '../core/audio';
 import discsJson from '../content/discs.json';
 import { CameraRig } from '../core/camera';
 import type { PointerInfo } from '../core/input';
@@ -14,6 +15,7 @@ import type { Scene } from '../core/scene';
 import { VIEW_H, VIEW_W } from '../core/screen';
 import type { HoleDef } from '../game/hole';
 import { applyThrow, formatToPar, type HoleState, isHoleOver, newHole, SCORE_LABEL, scoreKey } from '../game/rules';
+import type { HoleRecord, ThrowLog } from '../game/round';
 import { type Camera, worldToScreen } from '../render/field';
 import { drawText, drawTextShadow } from '../render/font';
 import { PAL } from '../render/palette';
@@ -80,8 +82,15 @@ export interface HoleSceneOpts {
   holeCount: number;
   /** Round score to par before this hole. */
   roundToPar: number;
+  /** Player's throwing hand (default right). */
+  hand?: Hand;
+  /** Show tutorial hints (default true). */
+  hints?: boolean;
+  /** Mulligans left in the round. 0 or missing = none. */
+  mulligansLeft?: number;
   onThrow?: (r: ThrowResult) => void;
-  onFinish?: (s: HoleState, action: 'next' | 'replay') => void;
+  onFinish?: (rec: HoleRecord) => void;
+  onPause?: () => void;
 }
 
 type Gesture =
@@ -105,7 +114,10 @@ export class HoleScene implements Scene {
   private lastPutterIdx = 0;
   private releaseIdx = 1;
   private styleIdx = 0;
-  private hand: Hand = 'right';
+  private hand: Hand;
+  private logs: ThrowLog[] = [];
+  private undo: { state: HoleState; logs: ThrowLog[] }[] = [];
+  private mullsUsed = 0;
   private windIdx = 0;
   private wind: Wind;
   private throwNo = 0;
@@ -133,6 +145,7 @@ export class HoleScene implements Scene {
     private opts: HoleSceneOpts,
   ) {
     this.hole = opts.hole;
+    this.hand = opts.hand ?? 'right';
     this.terrain = makeTerrain(this.hole.terrain);
     this.view = new HoleRenderer(this.hole, this.terrain);
     this.state = newHole(this.hole.par, this.hole.tee);
@@ -146,8 +159,12 @@ export class HoleScene implements Scene {
     this.lastPutterIdx = DISCS.findIndex((d) => d.type === 'putter');
     this.buttons = this.makeTray();
     this.doneButtons = [
-      { x: 22, y: 178, w: 66, h: 20, caption: () => (this.opts.holeNumber >= this.opts.holeCount ? 'START OVER' : `HOLE ${this.opts.holeNumber + 1}`), value: () => 'NEXT', onTap: () => this.opts.onFinish?.(this.state, 'next') },
-      { x: 92, y: 178, w: 66, h: 20, caption: () => 'THIS HOLE', value: () => 'AGAIN', onTap: () => this.opts.onFinish?.(this.state, 'replay') },
+      {
+        x: 40, y: 178, w: 100, h: 20,
+        caption: () => (this.opts.holeNumber >= this.opts.holeCount ? 'ROUND COMPLETE' : `ON TO HOLE ${this.opts.holeNumber + 1}`),
+        value: () => (this.opts.holeNumber >= this.opts.holeCount ? 'SEE THE CARD' : 'NEXT HOLE'),
+        onTap: () => this.opts.onFinish?.(this.record()),
+      },
     ];
   }
 
@@ -210,7 +227,13 @@ export class HoleScene implements Scene {
           onTap: () => this.rig.snapBack(),
           enabled: () => this.rig.detached,
         },
-        { x: 135, y: row2, w: 42, h: 20, caption: () => 'RESTART', value: () => 'HOLE', onTap: () => this.resetHole() },
+        {
+          x: 135, y: row2, w: 42, h: 20,
+          caption: () => 'MULLIGAN',
+          value: () => `X${this.mullsLeft()}`,
+          onTap: () => this.mulligan(),
+          enabled: () => this.canMulligan(),
+        },
       );
     }
     return tray;
@@ -226,6 +249,43 @@ export class HoleScene implements Scene {
   /** Exposed for smoke tests. */
   get debug() {
     return { mode: this.mode, state: this.state, lie: this.state.lie, disc: this.disc.id, puttView: this.puttViewVisible() };
+  }
+
+  // ---------- Round bookkeeping ----------
+
+  private record(): HoleRecord {
+    const s = this.state;
+    return { holeId: this.hole.id, par: s.par, strokes: s.strokes, penalties: s.penalties, pickedUp: s.pickedUp, mulligans: this.mullsUsed, throws: this.logs };
+  }
+
+  private mullsLeft() {
+    return Math.max(0, (this.opts.mulligansLeft ?? 0) - this.mullsUsed);
+  }
+
+  private canMulligan() {
+    return !this.opts.practice && this.mullsLeft() > 0 && this.undo.length > 0 && !this.state.holed && (this.mode === 'aim' || this.mode === 'rest');
+  }
+
+  /** Rewind the last throw: lie, strokes and logs go back to before it. */
+  private mulligan() {
+    if (!this.canMulligan()) return;
+    const u = this.undo.pop()!;
+    this.state = u.state;
+    this.logs = u.logs;
+    this.mullsUsed++;
+    this.mode = 'aim';
+    this.current = null;
+    this.putt = null;
+    this.toast = { title: 'MULLIGAN', sub: `${this.mullsLeft()} LEFT THIS ROUND`, t: 0, bad: false };
+    this.rig.snapBack();
+  }
+
+  private log(l: Omit<ThrowLog, 'n' | 'discId' | 'discType'>) {
+    this.logs.push({ ...l, n: this.state.throws, discId: this.disc.id, discType: this.disc.type });
+  }
+
+  private hintsOn() {
+    return this.opts.hints !== false;
   }
 
   // ---------- Helpers ----------
@@ -274,6 +334,8 @@ export class HoleScene implements Scene {
   private resetHole() {
     if (this.mode === 'flight' || this.mode === 'putting') return;
     this.state = newHole(this.hole.par, this.hole.tee);
+    this.logs = [];
+    this.undo = [];
     this.mode = 'aim';
     this.current = null;
     this.putt = null;
@@ -302,6 +364,11 @@ export class HoleScene implements Scene {
         this.preview = [];
         this.rig.pinchStart(a, b);
       }
+      return;
+    }
+    if (p.y < HUD_H && p.x < 22 && this.mode !== 'done') {
+      sfx.play('tap');
+      this.opts.onPause?.();
       return;
     }
     if (this.mode === 'intro') {
@@ -400,7 +467,10 @@ export class HoleScene implements Scene {
     switch (g.kind) {
       case 'button':
         g.b.pressed = false;
-        if (hit(g.b, p.x, p.y) && (g.b.enabled ? g.b.enabled() : true)) g.b.onTap();
+        if (hit(g.b, p.x, p.y) && (g.b.enabled ? g.b.enabled() : true)) {
+          sfx.play('tap');
+          g.b.onTap();
+        }
         break;
       case 'mini':
         this.toggleOverview();
@@ -470,9 +540,11 @@ export class HoleScene implements Scene {
   }
 
   private throwDisc(input: ThrowInput) {
+    this.undo.push({ state: this.state, logs: [...this.logs] });
     const r = simulateThrow(input, this.disc, this.env(), this.nextSeed(), this.cfg);
     this.current = r;
     this.playT = 0;
+    sfx.play('throw');
     this.mode = 'flight';
     this.toast = null;
     this.rig.snapBack();
@@ -489,7 +561,10 @@ export class HoleScene implements Scene {
     const ace = g.kind === 'holed' && this.state.throws === 0 && !this.opts.practice;
     this.toast = { title: ace ? 'ACE!' : REST_TEXT[g.kind], sub, t: 0, bad: g.penalty > 0 };
     if (g.kind === 'holed') this.flash = 1.2;
+    sfx.play(g.kind === 'holed' ? 'chains' : g.kind === 'water' ? 'splash' : g.kind === 'ob' ? 'ob' : 'tap');
+    const from = this.distToBasket();
     this.state = applyThrow(this.state, this.cfg, { penalty: g.penalty, holed: g.kind === 'holed', lie: g.lie });
+    this.log({ kind: 'throw', fromFt: from, toFt: this.distToBasket(), distanceFt: r.total, penalty: g.penalty, made: g.kind === 'holed', surface: g.surface });
   }
 
   private puttFromSwipe(pts: SwipePoint[]) {
@@ -502,8 +577,10 @@ export class HoleScene implements Scene {
     const proj = this.projector();
     const w = windAt(this.wind, 0, 0, this.cfg.windScale);
     const res = resolvePutt(read, { distance: proj.distance, rise: proj.rise, crosswind: proj.crosswind(w) }, makeRng(this.nextSeed()), this.cfg);
+    this.undo.push({ state: this.state, logs: [...this.logs] });
     this.putt = { proj, res, t: 0, done: false };
     this.mode = 'putting';
+    sfx.play('putt');
     this.toast = null;
     this.hint = null;
   }
@@ -521,7 +598,10 @@ export class HoleScene implements Scene {
     const sub = res.made ? `${Math.round(proj.distance)} FT PUTT` : `${Math.round(dist(lie, this.hole.basket))} FT TO GO`;
     this.toast = { title, sub, t: 0, bad: !res.made };
     if (res.made) this.flash = 1.2;
+    sfx.play(res.made ? 'chains' : penalty ? 'splash' : 'land');
+    const from = proj.distance;
     this.state = applyThrow(this.state, this.cfg, { penalty, holed: res.made, lie });
+    this.log({ kind: 'putt', fromFt: from, toFt: this.distToBasket(), distanceFt: dist(this.putt!.proj.lie, restW), penalty, made: res.made, surface: surf });
     this.mode = 'rest';
     this.restTimer = 0;
   }
@@ -535,7 +615,10 @@ export class HoleScene implements Scene {
   private endGimme() {
     this.flash = 1.2;
     this.toast = { title: 'TAP-IN', sub: 'GIMME', t: 0, bad: false };
+    sfx.play('chains');
+    const from = this.distToBasket(this.gimme!.from);
     this.state = applyThrow(this.state, this.cfg, { penalty: 0, holed: true, lie: this.hole.basket });
+    this.log({ kind: 'gimme', fromFt: from, toFt: 0, distanceFt: from, penalty: 0, made: true, surface: 'green' });
     this.gimme = null;
     this.mode = 'rest';
     this.restTimer = 0;
@@ -552,6 +635,8 @@ export class HoleScene implements Scene {
       }
       this.mode = 'done';
       this.toast = null;
+      const d = this.state.strokes - this.state.par;
+      sfx.play(this.state.pickedUp || d >= 2 ? 'bad' : d <= -1 ? 'good' : 'tap');
       return;
     }
     this.mode = 'aim';
@@ -584,7 +669,15 @@ export class HoleScene implements Scene {
         if (this.introT > 2.6) this.endIntro();
         break;
       case 'flight': {
+        const prev = this.playT;
         this.playT += dt;
+        const f = this.current!.flight;
+        for (const th of f.treeHitTimes) if (th > prev && th <= this.playT) sfx.play('tree');
+        if (f.landing.t > prev && f.landing.t <= this.playT && !f.holed) {
+          const g = this.current!.ground;
+          if (g.skipped) sfx.play('skip');
+          else if (g.kind !== 'water') sfx.play('land');
+        }
         const end = this.current!.path[this.current!.path.length - 1].t;
         if (this.playT >= end) {
           this.playT = end;
@@ -683,7 +776,7 @@ export class HoleScene implements Scene {
     if (this.mode === 'aim' && !this.gesture) {
       const r = 6 + Math.sin(this.time * (this.inGimme() ? 8 : 4)) * 1.5;
       ringPixels(ctx, ds.x, ds.y - 1, r, this.inGimme() ? PAL.white : PAL.amber);
-      if (this.inGimme()) drawTextShadow(ctx, 'GIMME! TAP THE DISC', VIEW_W / 2, Math.min(TRAY_Y - 10, ds.y + 12), PAL.ink, PAL.night0, 'center');
+      if (this.inGimme() && this.hintsOn()) drawTextShadow(ctx, 'GIMME! TAP THE DISC', VIEW_W / 2, Math.min(TRAY_Y - 10, ds.y + 12), PAL.ink, PAL.night0, 'center');
       // Off-screen? point the way home.
       if (ds.x < 0 || ds.x > VIEW_W || ds.y < HUD_H || ds.y > TRAY_Y) {
         drawTextShadow(ctx, 'TAP FIND DISC TO RETURN', VIEW_W / 2, TRAY_Y - 9, PAL.ink, PAL.night0, 'center');
@@ -709,7 +802,7 @@ export class HoleScene implements Scene {
       if (g?.kind === 'swipe') {
         ctx.fillStyle = PAL.amber;
         for (const q of g.pts) ctx.fillRect(Math.round(q.x) - 1, Math.round(q.y) - 1, 2, 2);
-      } else {
+      } else if (this.hintsOn()) {
         const bob = Math.round(Math.sin(this.time * 4) * 2);
         drawTextShadow(ctx, 'SWIPE UP AT THE CHAINS', VIEW_W / 2, TRAY_Y - 40 + bob, PAL.ink, PAL.night0, 'center');
         drawTextShadow(ctx, 'FLICK = MORE · PUSH = LESS · CURVE = BEND', VIEW_W / 2, TRAY_Y - 8, PAL.inkDim, PAL.night0, 'center');
@@ -721,7 +814,7 @@ export class HoleScene implements Scene {
     const d = this.discScreen();
     const len = Math.hypot(pull.x, pull.y);
     if (len < this.cfg.cancelPullPx) {
-      drawTextShadow(ctx, 'PULL BACK TO THROW', VIEW_W / 2, d.y + 14, PAL.ink, PAL.night0, 'center');
+      if (this.hintsOn()) drawTextShadow(ctx, 'PULL BACK TO THROW', VIEW_W / 2, d.y + 14, PAL.ink, PAL.night0, 'center');
       return;
     }
     const ux = pull.x / len;
@@ -766,15 +859,21 @@ export class HoleScene implements Scene {
     ctx.fillStyle = PAL.night3;
     ctx.fillRect(0, HUD_H, VIEW_W, 1);
     const toBasket = Math.round(this.distToBasket(this.mode === 'flight' ? this.discPosNow() : this.state.lie));
+    // Pause button.
+    panel(ctx, 2, 3, 17, 18, PAL.night2, PAL.dusk);
+    ctx.fillStyle = PAL.ink;
+    ctx.fillRect(7, 8, 2, 8);
+    ctx.fillRect(12, 8, 2, 8);
+    const tx = 23;
     if (this.opts.practice) {
-      drawText(ctx, 'PRACTICE FIELD', 4, 4, PAL.amber);
-      drawText(ctx, `BASKET ${toBasket} FT`, 4, 13, PAL.ink);
+      drawText(ctx, 'PRACTICE FIELD', tx, 4, PAL.amber);
+      drawText(ctx, `BASKET ${toBasket} FT`, tx, 13, PAL.ink);
     } else {
       const s = this.state;
-      drawText(ctx, `HOLE ${this.opts.holeNumber} · PAR ${this.hole.par}`, 4, 4, PAL.amber);
+      drawText(ctx, `HOLE ${this.opts.holeNumber} · PAR ${this.hole.par}`, tx, 4, PAL.amber);
       const toPar = this.opts.roundToPar + (isHoleOver(s) ? s.strokes - s.par : 0);
       const throwText = isHoleOver(s) ? `${s.strokes} THROWS` : `THROW ${s.strokes + 1}`;
-      drawText(ctx, `${toBasket} FT · ${throwText} · ${formatToPar(toPar)}`, 4, 13, PAL.ink);
+      drawText(ctx, `${toBasket} FT · ${throwText} · ${formatToPar(toPar)}`, tx, 13, PAL.ink);
     }
 
     // Wind: arrow shape + words, so it never relies on colour.
