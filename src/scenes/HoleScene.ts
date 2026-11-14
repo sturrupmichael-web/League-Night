@@ -28,7 +28,7 @@ import type { Disc } from '../sim/discs';
 import type { Hand, Style, ThrowInput } from '../sim/flight';
 import type { RestKind } from '../sim/ground';
 import { angleFromDir, clamp, dist, lerp, type PathPoint, type Vec2 } from '../sim/math';
-import { type PuttOutcome, type PuttPoint, type PuttResult, readSwipe, resolvePutt, type SwipePoint } from '../sim/putt';
+import { describeMiss, type PuttOutcome, type PuttPoint, type PuttResult, type PuttSetup, previewPutt, puttPowerWindow, readSwipe, resolvePutt, type SwipePoint } from '../sim/putt';
 import { makeRng, mixSeed } from '../sim/rng';
 import { makeTerrain, type Terrain } from '../sim/terrain';
 import { simulateThrow, type ThrowResult } from '../sim/throw';
@@ -640,15 +640,41 @@ export class HoleScene implements Scene {
       return;
     }
     const proj = this.projector();
-    const w = windAt(this.wind, 0, 0, this.cfg.windScale);
     const seed = this.nextSeed();
-    const res = resolvePutt(read, { distance: proj.distance, rise: proj.rise, crosswind: proj.crosswind(w) }, makeRng(seed), this.cfg);
+    const res = resolvePutt(read, this.puttSetup(proj), makeRng(seed), this.cfg);
     this.undo.push({ state: this.state, logs: [...this.logs] });
     this.putt = { proj, res, t: 0, done: false, read, seed };
     this.mode = 'putting';
     sfx.play('putt');
     this.toast = null;
     this.hint = null;
+  }
+
+  private puttSetup(proj: PuttProjector): PuttSetup {
+    const w = windAt(this.wind, 0, 0, this.cfg.windScale);
+    return { distance: proj.distance, rise: proj.rise, crosswind: proj.crosswind(w) };
+  }
+
+  /** Toast title for a putt: the outcome, plus which way and by how much it missed. */
+  private puttTitle(res: PuttResult, proj: PuttProjector): string {
+    const miss = describeMiss(res, this.puttSetup(proj), this.cfg);
+    if (!miss) return PUTT_TEXT[res.outcome];
+    switch (miss.kind) {
+      case 'short':
+        return `SHORT · ${miss.ft} FT`;
+      case 'low':
+        return res.outcome === 'cage' ? `CAGED · ${miss.ft} FT LOW` : `HIT THE POLE · ${miss.ft} FT LOW`;
+      case 'high':
+        return `OVER THE TOP · ${miss.ft} FT HIGH`;
+      case 'left':
+        return `WIDE LEFT · ${miss.ft} FT`;
+      case 'right':
+        return `WIDE RIGHT · ${miss.ft} FT`;
+      case 'hard':
+        return 'SPIT OUT · TOO HARD';
+      default:
+        return PUTT_TEXT[res.outcome];
+    }
   }
 
   private endPutt() {
@@ -658,8 +684,7 @@ export class HoleScene implements Scene {
     const surf = this.terrain.surface(restW.x, restW.y);
     const penalty = !res.made && (surf === 'water' || surf === 'ob') ? 1 : 0;
     const lie = res.made ? { ...this.hole.basket } : penalty ? { ...this.state.lie } : restW;
-    let title = PUTT_TEXT[res.outcome];
-    if (res.outcome === 'wide') title = res.atBasket && res.atBasket.u < 0 ? 'WIDE LEFT' : 'WIDE RIGHT';
+    let title = this.puttTitle(res, proj);
     if (penalty) title += surf === 'water' ? ' · SPLASH +1' : ' · OB +1';
     const sub = res.made ? `${Math.round(proj.distance)} FT PUTT` : `${Math.round(dist(lie, this.hole.basket))} FT TO GO`;
     this.toast = { title, sub, t: 0, bad: !res.made };
@@ -997,14 +1022,65 @@ export class HoleScene implements Scene {
 
     if (this.mode === 'aim') {
       const g = this.gesture;
+      const live = g?.kind === 'swipe' ? readSwipe(g.pts, this.cfg, true) : null;
+      const read = live && !live.cancel ? live : null;
+      this.drawPuttMeter(ctx, proj, read?.power ?? null);
       if (g?.kind === 'swipe') {
-        ctx.fillStyle = PAL.amber;
+        if (read && this.cfg.puttGuideFt > 0) this.drawPuttGuide(ctx, proj, read);
+        ctx.fillStyle = read ? PAL.amber : PAL.inkDim;
         for (const q of g.pts) ctx.fillRect(Math.round(q.x) - 1, Math.round(q.y) - 1, 2, 2);
       } else if (this.hintsOn()) {
         const bob = Math.round(Math.sin(this.time * 4) * 2);
         drawTextShadow(ctx, 'SWIPE UP AT THE CHAINS', VIEW_W / 2, TRAY_Y - 40 + bob, PAL.ink, PAL.night0, 'center');
         drawTextShadow(ctx, 'FLICK = MORE · PUSH = LESS · CURVE = BEND', VIEW_W / 2, TRAY_Y - 8, PAL.inkDim, PAL.night0, 'center');
       }
+    }
+  }
+
+  /** Putt power meter: the chains window in light blue, the dead-centre weight as a white tick. */
+  private drawPuttMeter(ctx: CanvasRenderingContext2D, proj: PuttProjector, power: number | null) {
+    const x = VIEW_W - 10;
+    const top = 84; // clear of the minimap
+    const h = TRAY_Y - 40 - top;
+    const maxP = 1.3;
+    const yOf = (p: number) => top + h - Math.round((Math.min(p, maxP) / maxP) * h);
+    const win = puttPowerWindow(proj.distance, proj.rise, this.cfg);
+    panel(ctx, x - 1, top - 1, 8, h + 2, PAL.night1, PAL.dusk);
+    ctx.fillStyle = PAL.night3;
+    ctx.fillRect(x + 1, top, 4, h);
+    const inWin = power !== null && power >= win.low && power <= win.high;
+    if (power !== null) {
+      const y = yOf(power);
+      ctx.fillStyle = inWin ? PAL.waterLight : power > win.high ? PAL.red : PAL.amber;
+      ctx.fillRect(x + 1, y, 4, top + h - y);
+    }
+    // The window: a bracket either side of the bar, so the fill stays readable.
+    const yHi = yOf(win.high);
+    const yLo = yOf(win.low);
+    ctx.fillStyle = PAL.waterLight;
+    ctx.fillRect(x - 3, yHi, 2, Math.max(1, yLo - yHi));
+    ctx.fillRect(x + 7, yHi, 2, Math.max(1, yLo - yHi));
+    ctx.fillStyle = PAL.ink;
+    ctx.fillRect(x - 3, yOf(win.ideal), 12, 1);
+    const word = power === null ? 'PWR' : inWin ? 'GOOD' : power > win.high ? 'HARD' : 'SOFT';
+    const col = power === null ? PAL.inkDim : inWin ? PAL.waterLight : power > win.high ? PAL.red : PAL.amber;
+    drawTextShadow(ctx, word, x + 8, top + h + 4, col, PAL.night0, 'right');
+  }
+
+  /** The first few feet of the putt's line with a steady release: shows aim and bend, not the result. */
+  private drawPuttGuide(ctx: CanvasRenderingContext2D, proj: PuttProjector, read: Extract<SwipeRead, { cancel: false }>) {
+    const pv = previewPutt(read, this.puttSetup(proj), this.cfg);
+    const reach = Math.min(this.cfg.puttGuideFt, proj.distance * 0.6);
+    ctx.fillStyle = 'rgba(244,233,205,0.85)';
+    let lastV = -1;
+    for (const q of pv.path) {
+      if (q.v > reach) break;
+      if (q.v - lastV < 0.3) continue;
+      lastV = q.v;
+      const s = proj.project(q.u, q.v, q.h);
+      if (!s) continue;
+      const r = s.s > 40 ? 2 : 1;
+      ctx.fillRect(Math.round(s.x) - (r >> 1), Math.round(s.y) - (r >> 1), r, r);
     }
   }
 

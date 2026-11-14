@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG as cfg } from '../config';
-import { idealPuttPower, readSwipe, resolvePutt, type SwipePoint, type SwipeRead } from './putt';
+import { describeMiss, idealPuttPower, previewPutt, puttPowerWindow, readSwipe, resolvePutt, type SwipePoint, type SwipeRead } from './putt';
 import { makeRng } from './rng';
 
 /** A straight upward swipe of `len` px over `ms`, with a constant finger speed. */
@@ -142,5 +142,56 @@ describe('long putts carry risk', () => {
     expect(rate(15)).toBe(1);
     expect(rate(60)).toBeLessThan(0.8);
     expect(rate(60)).toBeGreaterThan(0.15);
+  });
+});
+
+describe('putting aids', () => {
+  it('the power window brackets the ideal power and widens nothing past 1.3', () => {
+    for (const d of [12, 25, 40, 60]) {
+      const w = puttPowerWindow(d, 0, cfg);
+      expect(w.low).toBeLessThan(w.ideal);
+      expect(w.ideal).toBeLessThan(w.high);
+      expect(w.high).toBeLessThanOrEqual(1.3);
+    }
+    // Uphill needs more.
+    expect(puttPowerWindow(30, 2, cfg).ideal).toBeGreaterThan(puttPowerWindow(30, 0, cfg).ideal);
+  });
+
+  it('powers at the edges of the window make a straight putt (inside the wobble-free range)', () => {
+    const w = puttPowerWindow(20, 0, cfg);
+    expect(putt(straight(w.low + 0.005), 20).outcome).not.toBe('cage');
+    expect(putt(straight(w.high - 0.005), 20).outcome).not.toBe('over');
+    expect(putt(straight(w.low - 0.03), 20).made).toBe(false);
+    expect(putt(straight(w.high + 0.03), 20).made).toBe(false);
+  });
+
+  it('the preview is the putt without wobble, and the same every time', () => {
+    const r: Read = { ...straight(idealPuttPower(45, 0, cfg)), aim: 0.02, bend: 0.3 };
+    const a = previewPutt(r, { distance: 45, rise: 0 }, cfg);
+    const b = previewPutt(r, { distance: 45, rise: 0 }, cfg);
+    expect(a.path).toEqual(b.path);
+    // Up close there is no wobble, so the preview is exactly the real putt.
+    const close: Read = { ...straight(idealPuttPower(15, 0, cfg)), aim: 0.01 };
+    expect(previewPutt(close, { distance: 15, rise: 0 }, cfg).path).toEqual(putt(close, 15, 0, 99).path);
+  });
+
+  it('a live read does not cancel a paused finger', () => {
+    const paused = swipe(80, 200, { tail: [{ x: 90, y: 200, t: 400 }] });
+    expect(readSwipe(paused, cfg).cancel).toBe(true);
+    expect(readSwipe(paused, cfg, true).cancel).toBe(false);
+  });
+
+  it('describes misses in plain words', () => {
+    const setup = { distance: 30, rise: 0 };
+    const w = puttPowerWindow(30, 0, cfg);
+    const short = putt(straight(w.ideal * 0.5), 30);
+    expect(describeMiss(short, setup, cfg)?.kind).toMatch(/short|low/);
+    const high = putt(straight(w.high + 0.15), 30);
+    expect(describeMiss(high, setup, cfg)?.kind).toBe('high');
+    const left = resolvePutt({ ...straight(w.ideal), aim: -0.15 }, setup, makeRng(1), cfg);
+    const m = describeMiss(left, setup, cfg);
+    expect(m?.kind).toBe('left');
+    expect(m!.ft).toBeGreaterThanOrEqual(1);
+    expect(describeMiss(putt(straight(w.ideal), 12), { distance: 12, rise: 0 }, cfg)).toBeNull();
   });
 });

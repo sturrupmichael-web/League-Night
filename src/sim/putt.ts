@@ -35,7 +35,11 @@ export type SwipeRead =
 
 const RELEASE_WINDOW_MS = 80;
 
-export function readSwipe(points: SwipePoint[], cfg: Config): SwipeRead {
+/**
+ * `live` reads a swipe that is still in progress (for the on-screen meter): a finger that
+ * has paused or is easing back is not a cancel yet, so only the length/direction checks apply.
+ */
+export function readSwipe(points: SwipePoint[], cfg: Config, live = false): SwipeRead {
   if (points.length < 2) return { cancel: true, reason: 'short' };
   const a = points[0];
   const b = points[points.length - 1];
@@ -49,9 +53,9 @@ export function readSwipe(points: SwipePoint[], cfg: Config): SwipeRead {
   const r0 = points[k];
   const dt = Math.max(1, b.t - r0.t) / 1000;
   const vy = (b.y - r0.y) / dt; // + = moving down the screen
-  if (vy > cfg.puttParkSpeed) return { cancel: true, reason: 'backward' };
+  if (!live && vy > cfg.puttParkSpeed) return { cancel: true, reason: 'backward' };
   const releaseSpeed = Math.max(0, -vy);
-  if (releaseSpeed < cfg.puttParkSpeed) return { cancel: true, reason: 'parked' };
+  if (!live && releaseSpeed < cfg.puttParkSpeed) return { cancel: true, reason: 'parked' };
 
   const cx = b.x - a.x;
   const chord = Math.hypot(cx, up);
@@ -100,14 +104,71 @@ export function puttLaunchSpeed(power: number, cfg: Config): number {
   return cfg.puttSpeedFull * Math.sqrt(Math.max(0, power));
 }
 
-/** Power that puts a straight putt in the middle of the chains (ignores snap). */
-export function idealPuttPower(distance: number, rise: number, cfg: Config): number {
+/** Power that makes a straight putt reach the basket at height `h` (ft above basket ground). */
+function powerForHeight(distance: number, rise: number, h: number, cfg: Config): number {
   const th = cfg.puttLaunchDeg * DEG;
-  const target = (cfg.basketCatchLow + cfg.basketCatchHigh) / 2 + rise;
-  const drop = cfg.puttReleaseHeight + distance * Math.tan(th) - target;
+  const drop = cfg.puttReleaseHeight + distance * Math.tan(th) - (h + rise);
   if (drop <= 0) return 1.3;
   const v2 = (G * distance * distance) / (2 * Math.cos(th) ** 2 * drop);
-  return v2 / cfg.puttSpeedFull ** 2;
+  return Math.min(1.3, v2 / cfg.puttSpeedFull ** 2);
+}
+
+/** Power that puts a straight putt in the middle of the chains (ignores snap). */
+export function idealPuttPower(distance: number, rise: number, cfg: Config): number {
+  return powerForHeight(distance, rise, (cfg.basketCatchLow + cfg.basketCatchHigh) / 2, cfg);
+}
+
+/**
+ * The band of power that finds the chains on a straight, wobble-free putt: `low` just clears
+ * the cage, `high` just catches the top chains. The meter draws it as the "make" zone.
+ */
+export function puttPowerWindow(distance: number, rise: number, cfg: Config): { low: number; ideal: number; high: number } {
+  return {
+    low: powerForHeight(distance, rise, cfg.basketCatchLow, cfg),
+    ideal: idealPuttPower(distance, rise, cfg),
+    high: powerForHeight(distance, rise, cfg.basketCatchHigh, cfg),
+  };
+}
+
+/** Rng that always answers 0.5: no wobble, no spit roll. Used for the aiming guide. */
+const steadyRng: Rng = () => 0.5;
+
+/** The putt as it would fly with a perfectly steady release (no wobble). For the aiming guide only. */
+export function previewPutt(read: Extract<SwipeRead, { cancel: false }>, setup: PuttSetup, cfg: Config): PuttResult {
+  return resolvePutt(read, setup, steadyRng, cfg);
+}
+
+export type MissKind = 'short' | 'long' | 'high' | 'low' | 'left' | 'right' | 'hard' | 'offline';
+
+/**
+ * Plain-words read of a miss: the main reason and by how much (ft, rounded up to 1).
+ * Null for a make.
+ */
+export function describeMiss(res: PuttResult, setup: PuttSetup, cfg: Config): { kind: MissKind; ft: number } | null {
+  if (res.made) return null;
+  const ft = (x: number) => Math.max(1, Math.round(x));
+  const at = res.atBasket;
+  if (!at) return { kind: 'short', ft: ft(setup.distance - res.rest.v) };
+  const au = Math.abs(at.u);
+  switch (res.outcome) {
+    case 'spit': {
+      const ratio = at.speed / idealArrivalSpeed(setup.distance, setup.rise, cfg);
+      return ratio >= cfg.spitRatio ? { kind: 'hard', ft: 0 } : { kind: 'offline', ft: 0 };
+    }
+    case 'over':
+      return { kind: 'high', ft: ft(at.h - cfg.basketCatchHigh) };
+    case 'cage':
+    case 'short':
+      return { kind: 'low', ft: ft(cfg.basketCatchLow - at.h) };
+    default: {
+      // Wide: which way, and how far outside the chains. If it also sailed high, height wins only when it's the bigger miss.
+      const side = au - cfg.chainHalfWidth;
+      const high = at.h - cfg.basketCatchHigh;
+      if (high > side) return { kind: 'high', ft: ft(high) };
+      if (at.h < cfg.basketCatchLow - 0.5 && cfg.basketCatchLow - at.h > side) return { kind: 'low', ft: ft(cfg.basketCatchLow - at.h) };
+      return { kind: at.u < 0 ? 'left' : 'right', ft: ft(side) };
+    }
+  }
 }
 
 /** Arrival speed of a perfectly weighted straight putt. */
