@@ -1,5 +1,5 @@
 /** Friend matches: shared types for the client, the local stand-in backend and Supabase. */
-import type { Pacing, RoundLength, ThrowReplay } from '../game/round';
+import type { Pacing, RoundLength, RoundState, ThrowReplay } from '../game/round';
 import type { Vec2 } from '../sim/math';
 
 export interface PlayerMeta {
@@ -83,7 +83,43 @@ export interface MatchBundle {
 export type NetEvent = { kind: 'match' | 'throw' | 'message'; matchId: string };
 
 /** What the game needs from a backend. Supabase in production, localStorage for dev and tests. */
-export interface NetBackend {
+/** One line on a leaderboard: a player's best round on that course and length. */
+export interface BoardRow {
+  rank: number;
+  name: string;
+  strokes: number;
+  toPar: number;
+  chaser: string;
+}
+
+/** Which board: a course, a round length, all time or since a date (ISO). */
+export interface BoardKey {
+  courseId: string;
+  holes: 9 | 18;
+  since: string | null;
+}
+
+export interface PostedScore {
+  name: string;
+  rank: number;
+  toPar: number;
+}
+
+/** The online leaderboard. Names are shared with Michael's other games (the `players` table). */
+export interface LeaderboardApi {
+  /** The player's leaderboard name, or null if they haven't picked one. */
+  myName(): Promise<string | null>;
+  /** Claim or change the name. Resolves to the stored name; rejects with a message in caps. */
+  setName(name: string): Promise<string>;
+  /** Send a finished round. The server replays it before it goes on the board. */
+  submit(round: RoundState): Promise<PostedScore>;
+  board(key: BoardKey): Promise<BoardRow[]>;
+  myBest(key: BoardKey): Promise<{ rank: number; strokes: number; toPar: number } | null>;
+}
+
+export const NAME_MAX = 12;
+
+export interface NetBackend extends LeaderboardApi {
   readonly label: string;
   /** Sign in (anonymously) if needed and return the player id. */
   me(): Promise<string>;

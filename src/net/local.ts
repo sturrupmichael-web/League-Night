@@ -4,13 +4,30 @@
  * end-to-end tests; the rules are the same ones the Supabase trigger enforces.
  */
 import { checkInsert, makeCode, opponentOf } from './rules';
-import type { ChatRow, Match, MatchBundle, MatchSettings, NetBackend, NetEvent, PlayerMeta, ThrowPayload, ThrowRow } from './types';
+import type { RoundState } from '../game/round';
+import { cleanName } from './leaderboard';
+import type { BoardKey, BoardRow, ChatRow, Match, MatchBundle, MatchSettings, NetBackend, NetEvent, PlayerMeta, PostedScore, ThrowPayload, ThrowRow } from './types';
+import { verifyRound } from './verifyRound';
 import { MAX_CHAT } from './types';
+
+interface LocalScore {
+  user: string;
+  name: string;
+  course: string;
+  holes: number;
+  strokes: number;
+  toPar: number;
+  chaser: string;
+  seed: number;
+  at: string;
+}
 
 interface Db {
   matches: Match[];
   throws: ThrowRow[];
   messages: ChatRow[];
+  names?: Record<string, string>;
+  scores?: LocalScore[];
 }
 
 const DB_KEY = 'leaguenight.fakenet.db';
@@ -181,5 +198,62 @@ export class LocalBackend implements NetBackend {
   subscribe(cb: (e: NetEvent) => void): () => void {
     this.listeners.add(cb);
     return () => this.listeners.delete(cb);
+  }
+
+  // ---------- Leaderboard (same rules as ln_record_score / ln_leaderboard) ----------
+
+  async myName(): Promise<string | null> {
+    return this.db().names?.[await this.me()] ?? null;
+  }
+
+  async setName(name: string): Promise<string> {
+    const me = await this.me();
+    const clean = cleanName(name);
+    if (!clean) throw new Error('TYPE A NAME FIRST');
+    const db = this.db();
+    const names = (db.names ??= {});
+    if (Object.entries(names).some(([id, n]) => id !== me && n.toLowerCase() === clean.toLowerCase())) throw new Error('THAT NAME IS TAKEN');
+    names[me] = clean;
+    for (const s of db.scores ?? []) if (s.user === me) s.name = clean;
+    this.write(db);
+    return clean;
+  }
+
+  async submit(round: RoundState): Promise<PostedScore> {
+    const me = await this.me();
+    const db = this.db();
+    const name = db.names?.[me];
+    if (!name) throw new Error('PICK A LEADERBOARD NAME FIRST.');
+    const v = verifyRound(JSON.parse(JSON.stringify(round)) as RoundState);
+    if (!v.ok) throw new Error("THE REPLAY DOESN'T MATCH THIS CARD.");
+    const scores = (db.scores ??= []);
+    if (scores.some((s) => s.user === me && s.seed === round.seed)) throw new Error('THIS ROUND IS ALREADY ON THE BOARD.');
+    scores.push({ user: me, name, course: v.courseId, holes: v.holes, strokes: v.strokes, toPar: v.strokes - v.par, chaser: v.chaserId, seed: round.seed, at: new Date().toISOString() });
+    this.write(db);
+    const toPar = v.strokes - v.par;
+    const rank = 1 + this.bests({ courseId: v.courseId, holes: v.holes as 9 | 18, since: null }).filter((b) => b.user !== me && b.toPar < toPar).length;
+    return { name, rank, toPar };
+  }
+
+  private bests(key: BoardKey): LocalScore[] {
+    const best = new Map<string, LocalScore>();
+    for (const s of this.db().scores ?? []) {
+      if (s.course !== key.courseId || s.holes !== key.holes || (key.since && s.at < key.since)) continue;
+      const b = best.get(s.user);
+      if (!b || s.toPar < b.toPar) best.set(s.user, s);
+    }
+    return [...best.values()].sort((a, b) => a.toPar - b.toPar || a.at.localeCompare(b.at));
+  }
+
+  async board(key: BoardKey): Promise<BoardRow[]> {
+    const rows = this.bests(key);
+    return rows.slice(0, 20).map((s) => ({ rank: 1 + rows.filter((o) => o.toPar < s.toPar).length, name: s.name, strokes: s.strokes, toPar: s.toPar, chaser: s.chaser }));
+  }
+
+  async myBest(key: BoardKey) {
+    const me = await this.me();
+    const rows = this.bests(key);
+    const mine = rows.find((s) => s.user === me);
+    return mine ? { rank: 1 + rows.filter((o) => o.toPar < mine.toPar).length, strokes: mine.strokes, toPar: mine.toPar } : null;
   }
 }

@@ -6,7 +6,7 @@ import type { Config } from '../config';
 import discsJson from '../content/discs.json';
 import { holeWind } from '../game/conditions';
 import type { HoleDef } from '../game/hole';
-import { applyThrow, newHole } from '../game/rules';
+import { applyThrow, isHoleOver, newHole } from '../game/rules';
 import { PuttProjector } from '../render/puttView';
 import type { Disc } from '../sim/discs';
 import { dist, type Vec2 } from '../sim/math';
@@ -31,13 +31,29 @@ export const matchHoleSeed = (matchSeed: number, holeIdx: number) => mixSeed(mat
 
 const near = (a: Vec2 | undefined, b: Vec2) => !!a && Math.hypot(a.x - b.x, a.y - b.y) <= TOL;
 
-export function verifyHole(payloads: ThrowPayload[], hole: HoleDef, terrain: Terrain, matchSeed: number, holeIdx: number, cfg: Config): Verdict {
+/**
+ * `seedSlack` is how many throw seeds may be skipped: a mulligan rewinds a throw but its seed
+ * is spent, so the next throw uses the following one. Friend matches have no mulligans (0).
+ */
+export function verifyHole(payloads: ThrowPayload[], hole: HoleDef, terrain: Terrain, matchSeed: number, holeIdx: number, cfg: Config, seedSlack = 0): Verdict {
   const issues: string[] = [];
   const holeSeed = matchHoleSeed(matchSeed, holeIdx);
   const wind = holeWind(holeSeed, hole);
   let state = newHole(hole.par, hole.tee);
   let throwNo = 0;
-  const seedFor = () => mixSeed(holeSeed, hole.id * 1000 + ++throwNo);
+  let slack = seedSlack;
+  const seedFor = (claimed: number) => {
+    throwNo++;
+    // Skip ahead over seeds spent on rewound throws, if the claim matches a later one.
+    for (let k = 0; k <= slack; k++) {
+      if (mixSeed(holeSeed, hole.id * 1000 + throwNo + k) === claimed) {
+        throwNo += k;
+        slack -= k;
+        break;
+      }
+    }
+    return mixSeed(holeSeed, hole.id * 1000 + throwNo);
+  };
   for (const p of payloads) {
     const n = state.throws + 1;
     if (p.kind === 'done') {
@@ -53,7 +69,7 @@ export function verifyHole(payloads: ThrowPayload[], hole: HoleDef, terrain: Ter
       lie = { ...hole.basket };
       made = true;
     } else if (p.kind === 'throw' && p.replay?.t === 'throw') {
-      const seed = seedFor();
+      const seed = seedFor(p.replay.seed);
       if (p.replay.seed !== seed) issues.push(`throw ${n}: wrong seed`);
       if (!near(p.replay.input.origin, from)) issues.push(`throw ${n}: thrown from the wrong spot`);
       const disc = DISCS.find((d) => d.id === p.discId) ?? DISCS[0];
@@ -63,7 +79,7 @@ export function verifyHole(payloads: ThrowPayload[], hole: HoleDef, terrain: Ter
       penalty = r.ground.penalty;
       lie = made ? { ...hole.basket } : r.ground.lie;
     } else if (p.kind === 'putt' && p.replay?.t === 'putt') {
-      const seed = seedFor();
+      const seed = seedFor(p.replay.seed);
       if (p.replay.seed !== seed) issues.push(`throw ${n}: wrong seed`);
       if (!near(p.replay.lie, from)) issues.push(`throw ${n}: putted from the wrong spot`);
       const proj = new PuttProjector(terrain, from, hole.basket);
@@ -78,7 +94,8 @@ export function verifyHole(payloads: ThrowPayload[], hole: HoleDef, terrain: Ter
       issues.push(`throw ${n}: no replay data`);
       continue;
     }
-    if (!near(p.lie, lie)) issues.push(`throw ${n}: claimed lie does not match the replay`);
+    if (p.lie && !near(p.lie, lie)) issues.push(`throw ${n}: claimed lie does not match the replay`);
+    if (isHoleOver(state)) issues.push(`throw ${n}: thrown after the hole was over`);
     if ((p.penalty ?? 0) !== penalty) issues.push(`throw ${n}: penalty does not match`);
     if (!!p.made !== made) issues.push(`throw ${n}: ${made ? 'was a make' : 'was not a make'}`);
     state = applyThrow(state, cfg, { penalty, holed: made, lie });

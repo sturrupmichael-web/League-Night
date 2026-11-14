@@ -45,6 +45,11 @@ import { LostAndFound } from './scenes/turn/LostAndFound';
 import { SkipContest } from './scenes/turn/SkipContest';
 import { drawBigText, drawLanterns, type MenuItem, MenuScene } from './ui/menu';
 import { Friends } from './friends';
+import { getBackend } from './net';
+import { postable } from './net/leaderboard';
+import type { LeaderboardApi } from './net/types';
+import { LeaderboardScene } from './scenes/Leaderboard';
+import { NameEntryScene } from './scenes/NameEntry';
 
 const DISCS = discsJson as Disc[];
 
@@ -147,6 +152,7 @@ export class App {
       { caption: 'SEASON FINALE VS THE FIELD', value: 'THE LANTERN CUP', onTap: () => this.setupCup() },
       { caption: 'HEAD TO HEAD FOR SKINS', value: 'SKINS', onTap: () => this.setupSkins() },
       { caption: () => (this.friends.yourTurn ? `YOUR TURN IN ${this.friends.yourTurn} MATCH${this.friends.yourTurn > 1 ? 'ES' : ''}` : 'ONLINE · SAME COURSE'), value: 'PLAY A FRIEND', onTap: () => this.friends.menu() },
+      { caption: 'BEST ROUNDS ONLINE', value: 'LEADERBOARD', onTap: () => this.leaderboard(() => this.title()) },
       { caption: 'NO SCORE', value: 'PRACTICE FIELD', onTap: () => this.practice() },
     );
     const small = (x: number, y: number, caption: string, value: string, onTap: () => void): MenuItem => ({ caption, value, onTap, box: { x, y, w: 56, h: 20 } });
@@ -162,7 +168,7 @@ export class App {
       new MenuScene({
         items,
         top: items.length > 11 ? 82 : 92,
-        gap: 25,
+        gap: items.length > 11 ? 24 : 25,
         draw: (ctx, t) => {
           drawLanterns(ctx, t);
           drawBigText(ctx, 'LEAGUE', VIEW_W / 2, 32, PAL.amber, 3);
@@ -688,12 +694,77 @@ export class App {
             },
             title: () => this.title(),
             reel: () => this.game.set(new ReplayScene(clips, cfg, show, this.dyeColor)),
+            post: !this.ephemeral && postable(round) ? (scene) => void this.postRound(round, scene) : undefined,
           },
           night,
           highlights,
         ),
       );
     show();
+  }
+
+  // ---------- Leaderboard ----------
+
+  leaderboard(back: () => void, start: { courseId?: string; holes?: 9 | 18 } = { courseId: this.course.id }) {
+    const net = getBackend();
+    const board: LeaderboardScene = new LeaderboardScene(net, {
+      back,
+      changeName: () =>
+        void net.then(async (api) =>
+          this.pickName(api, (await api.myName().catch(() => null)) ?? '', () => {
+            this.game.set(board);
+            board.load();
+          }),
+        ),
+    }, start);
+    this.game.set(board);
+  }
+
+  /** Name entry; `done` runs after a save or on BACK. */
+  private pickName(api: LeaderboardApi, initial: string, done: (saved: boolean) => void, why?: string) {
+    const scene = new NameEntryScene(
+      (name, sc) => {
+        sc.busy = true;
+        api
+          .setName(name)
+          .then(() => {
+            sc.dispose();
+            done(true);
+          })
+          .catch((e: Error) => {
+            sc.message = e.message || 'COULD NOT SAVE THE NAME';
+          })
+          .finally(() => (sc.busy = false));
+      },
+      () => done(false),
+      initial,
+      why,
+    );
+    this.game.set(scene);
+  }
+
+  /** Send a finished round to the board, asking for a name first if there isn't one. */
+  private async postRound(round: RoundState, scene: ResultsScene) {
+    scene.posting = true;
+    scene.postMsg = null;
+    try {
+      const api = await getBackend();
+      if (!(await api.myName())) {
+        scene.posting = false;
+        this.pickName(api, '', (saved) => {
+          this.game.set(scene);
+          if (saved) void this.postRound(round, scene);
+        }, 'PICK A NAME FOR THE LEADERBOARD');
+        return;
+      }
+      const r = await api.submit(round);
+      scene.posted = `#${r.rank}`;
+      scene.postMsg = { text: `${r.name} · #${r.rank} ON ${this.courseOf(round).name} ${round.order.length}`, bad: false };
+    } catch (e) {
+      scene.postMsg = { text: (e as Error).message || 'COULD NOT POST THE SCORE', bad: true };
+    } finally {
+      scene.posting = false;
+    }
   }
 
   practice() {

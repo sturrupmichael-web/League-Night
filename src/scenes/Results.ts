@@ -31,11 +31,15 @@ const TABS: { id: Tab; label: string }[] = [
 export class ResultsScene extends MenuScene {
   private tab: Tab = 'night';
   private tabCount = TABS.length;
+  /** Leaderboard posting: in flight, the place once posted (e.g. "#4"), or a message. */
+  posting = false;
+  posted = '';
+  postMsg: { text: string; bad: boolean } | null = null;
 
   constructor(
     private round: RoundState,
     private course: CourseDef,
-    actions: { again: () => void; title: () => void; reel: () => void },
+    actions: { again: () => void; title: () => void; reel: () => void; post?: (scene: ResultsScene) => void },
     private night: NightSummary,
     private highlights: Highlight[],
   ) {
@@ -51,8 +55,22 @@ export class ResultsScene extends MenuScene {
         onTap: () => this.tab === 'reel' && this.highlights.length > 0 && actions.reel(),
         enabled: () => this.tab === 'reel' && this.highlights.length > 0,
       },
-      { x: 6, y, w: 82, h: 22, caption: () => 'SAME AGAIN', value: () => 'PLAY AGAIN', onTap: actions.again },
-      { x: 92, y, w: 82, h: 22, caption: () => 'BACK TO', value: () => 'TITLE', onTap: actions.title },
+      ...(actions.post
+        ? [
+            { x: 4, y, w: 56, h: 22, caption: () => 'SAME AGAIN', value: () => 'PLAY', onTap: actions.again },
+            {
+              x: 62, y, w: 56, h: 22,
+              caption: () => (this.posting ? 'SENDING' : this.posted ? 'ON THE BOARD' : 'LEADERBOARD'),
+              value: () => (this.posted ? this.posted : 'POST'),
+              onTap: () => actions.post!(this),
+              enabled: () => !this.posting && !this.posted,
+            },
+            { x: 120, y, w: 56, h: 22, caption: () => 'BACK TO', value: () => 'TITLE', onTap: actions.title },
+          ]
+        : [
+            { x: 6, y, w: 82, h: 22, caption: () => 'SAME AGAIN', value: () => 'PLAY AGAIN', onTap: actions.again },
+            { x: 92, y, w: 82, h: 22, caption: () => 'BACK TO', value: () => 'TITLE', onTap: actions.title },
+          ]),
     ];
   }
 
@@ -85,6 +103,12 @@ export class ResultsScene extends MenuScene {
     const rest = this.buttons.slice(this.tabCount);
     if (this.tab === 'reel') drawButton(ctx, rest[0]);
     for (const b of rest.slice(1)) drawButton(ctx, b);
+    if (this.postMsg) {
+      const y = VIEW_H - 38;
+      ctx.fillStyle = PAL.night1;
+      ctx.fillRect(0, y - 2, VIEW_W, 10);
+      drawText(ctx, this.postMsg.text, VIEW_W / 2, y, this.postMsg.bad ? PAL.red : PAL.amber, 'center');
+    }
   }
 
   private drawNight(ctx: CanvasRenderingContext2D) {

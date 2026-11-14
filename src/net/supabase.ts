@@ -4,7 +4,9 @@
  * ln_check_throw trigger police (see supabase/migrations).
  */
 import { createClient, type RealtimeChannel, type SupabaseClient } from '@supabase/supabase-js';
-import type { ChatRow, Match, MatchBundle, MatchSettings, NetBackend, NetEvent, PlayerMeta, ThrowPayload, ThrowRow } from './types';
+import type { RoundState } from '../game/round';
+import { cleanName, GAME_VERSION } from './leaderboard';
+import type { BoardKey, BoardRow, ChatRow, Match, MatchBundle, MatchSettings, NetBackend, NetEvent, PlayerMeta, PostedScore, ThrowPayload, ThrowRow } from './types';
 import { MAX_CHAT } from './types';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -138,5 +140,56 @@ export class SupabaseBackend implements NetBackend {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ln_throws' }, (p) => emit({ kind: 'throw', matchId: (p.new as Row).match_id }))
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ln_messages' }, (p) => emit({ kind: 'message', matchId: (p.new as Row).match_id }))
       .subscribe();
+  }
+
+  // ---------- Leaderboard ----------
+
+  async myName(): Promise<string | null> {
+    const me = await this.me();
+    const { data, error } = await this.sb.from('players').select('name').eq('user_id', me).maybeSingle();
+    if (error) fail(error, 'COULD NOT LOAD YOUR NAME');
+    return (data?.name as string | undefined) ?? null;
+  }
+
+  async setName(name: string): Promise<string> {
+    const me = await this.me();
+    const clean = cleanName(name);
+    if (!clean) fail(null, 'TYPE A NAME FIRST');
+    const had = await this.myName();
+    const { error } = had
+      ? await this.sb.from('players').update({ name: clean }).eq('user_id', me)
+      : await this.sb.from('players').insert({ name: clean });
+    if (error) fail(error.code === '23505' ? { message: 'THAT NAME IS TAKEN' } : error, 'COULD NOT SAVE THE NAME');
+    return clean;
+  }
+
+  async submit(round: RoundState): Promise<PostedScore> {
+    await this.me();
+    const { data, error } = await this.sb.functions.invoke('ln-submit-score', { body: { round, version: GAME_VERSION } });
+    if (error) {
+      // The function's own message is in the response body.
+      let msg = '';
+      try {
+        const ctx = (error as { context?: Response }).context;
+        msg = ctx ? ((await ctx.json()) as { error?: string }).error ?? '' : '';
+      } catch {
+        /* keep the generic message */
+      }
+      fail({ message: msg || error.message }, 'COULD NOT POST THE SCORE');
+    }
+    return { name: data.name, rank: data.rank, toPar: data.to_par };
+  }
+
+  async board(key: BoardKey): Promise<BoardRow[]> {
+    const { data, error } = await this.sb.rpc('ln_leaderboard', { p_course: key.courseId, p_holes: key.holes, p_since: key.since, p_limit: 20 });
+    if (error) fail(error, 'COULD NOT LOAD THE BOARD');
+    return ((data ?? []) as Row[]).map((r) => ({ rank: Number(r.rank), name: r.name, strokes: r.strokes, toPar: r.to_par, chaser: r.chaser }));
+  }
+
+  async myBest(key: BoardKey) {
+    await this.me();
+    const { data, error } = await this.sb.rpc('ln_my_best', { p_course: key.courseId, p_holes: key.holes, p_since: key.since });
+    if (error) fail(error, 'COULD NOT LOAD YOUR BEST');
+    return data ? { rank: Number(data.rank), strokes: data.strokes, toPar: data.to_par } : null;
   }
 }

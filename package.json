@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "build:single": "npm run build && node scripts/single-file.cjs dist dist/league-night-single.html",
-    "test:e2e": "playwright test --trace off"
+    "test:e2e": "playwright test --trace off",
+    "build:verifier": "vite build --config scripts/verifier.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
