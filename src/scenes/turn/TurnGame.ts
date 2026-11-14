@@ -19,6 +19,7 @@ export interface TurnGameInfo {
 }
 
 export abstract class TurnGame implements Scene {
+  readonly music = 'turn' as const;
   protected phase: 'intro' | 'play' | 'result' = 'intro';
   protected time = 0;
   protected playT = 0;

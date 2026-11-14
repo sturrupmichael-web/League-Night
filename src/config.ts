@@ -128,6 +128,12 @@ export const DEFAULT_CONFIG = {
   puttLaunchDeg: 12,
   puttReleaseHeight: 3,
   puttWindDrift: 0.12,
+  /** Putts from beyond this distance pick up a random release wobble... */
+  puttWobbleFromFt: 20,
+  /** ...of up to this many degrees of aim per 30 ft past it... */
+  puttWobbleDeg: 1.6,
+  /** ...and up to this fraction of power per 30 ft past it. */
+  puttPowerWobble: 0.06,
   /** Basket geometry, relative to basket ground (ft). */
   chainHalfWidth: 0.85,
   centerHalfWidth: 0.35,
@@ -201,6 +207,9 @@ export const CONFIG_META: ConfigMeta[] = [
   m('Putting', 'puttAimGain', 0, 1, 0.01),
   m('Putting', 'puttBendGain', 0, 12, 0.1),
   m('Putting', 'puttBendAccel', 0, 20, 0.5),
+  m('Putting', 'puttWobbleFromFt', 0, 70, 1),
+  m('Putting', 'puttWobbleDeg', 0, 6, 0.1),
+  m('Putting', 'puttPowerWobble', 0, 0.3, 0.01),
   m('Putting', 'chainHalfWidth', 0.3, 1.5, 0.05),
   m('Putting', 'spitRatio', 1, 1.5, 0.01),
   m('Putting', 'blowThroughRatio', 1, 2, 0.01),

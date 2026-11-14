@@ -71,43 +71,76 @@ export class FieldRenderer {
     this.img = new ImageData(viewW, viewH);
   }
 
-  private cellAt(wx: number, wy: number): number {
-    const i = Math.floor((wx - this.x0) / this.cell);
-    const j = Math.floor((wy - this.y0) / this.cell);
-    if (i < 0 || j < 0 || i >= this.gw || j >= this.gh) return -1;
-    return j * this.gw + i;
-  }
+  // Per-column / per-row lookups (the camera never rotates, so a cell index is col + row).
+  private colI = new Int32Array(0);
+  private rowJ = new Int32Array(0);
+  private stripeRow = new Uint8Array(0);
+  private checkRow = new Uint8Array(0);
+  private checkCol = new Uint8Array(0);
+  private last = { x: NaN, y: NaN, zoom: NaN, ax: NaN, ay: NaN, shimmer: -1 };
 
   draw(ctx: CanvasRenderingContext2D, cam: Camera, time: number) {
     const { img } = this;
-    const d = img.data;
     const W = img.width;
     const H = img.height;
-    const inv = 1 / cam.zoom;
     const shimmer = Math.floor(time * 3);
+    const L = this.last;
+    // Nothing moved since the last frame: the image is still good.
+    if (L.x === cam.x && L.y === cam.y && L.zoom === cam.zoom && L.ax === cam.ax && L.ay === cam.ay && L.shimmer === shimmer) {
+      ctx.putImageData(img, 0, 0);
+      return;
+    }
+    Object.assign(L, { x: cam.x, y: cam.y, zoom: cam.zoom, ax: cam.ax, ay: cam.ay, shimmer });
+    const d = img.data;
+    const inv = 1 / cam.zoom;
+    if (this.colI.length !== W + 1) {
+      this.colI = new Int32Array(W + 1);
+      this.checkCol = new Uint8Array(W + 1);
+      this.rowJ = new Int32Array(H + 1);
+      this.stripeRow = new Uint8Array(H + 1);
+      this.checkRow = new Uint8Array(H + 1);
+    }
+    const { colI, rowJ, gw, gh, surf, height } = this;
+    // colI[sx] = cell column of pixel sx (or -1); rowJ[r] = cell row of pixel row r-1 (rowJ[0] = the row above the screen).
+    for (let sx = 0; sx <= W; sx++) {
+      const wx = cam.x + (sx + 0.5 - cam.ax) * inv;
+      const i = Math.floor((wx - this.x0) / this.cell);
+      colI[sx] = i < 0 || i >= gw ? -1 : i;
+      this.checkCol[sx] = Math.floor(wx / 10) & 1;
+    }
+    for (let r = 0; r <= H; r++) {
+      const wy = cam.y - (r - 1 + 0.5 - cam.ay) * inv;
+      const j = Math.floor((wy - this.y0) / this.cell);
+      rowJ[r] = j < 0 || j >= gh ? -1 : j * gw;
+      this.stripeRow[r] = Math.floor(wy / 20) & 1;
+      this.checkRow[r] = Math.floor(wy / 10) & 1;
+    }
     for (let sy = 0; sy < H; sy++) {
-      const wy = cam.y - (sy + 0.5 - cam.ay) * inv;
-      const wyUp = wy + inv;
-      for (let sx = 0; sx < W; sx++) {
-        const wx = cam.x + (sx + 0.5 - cam.ax) * inv;
-        const k = this.cellAt(wx, wy);
-        const s = k < 0 ? 5 : this.surf[k];
+      const row = rowJ[sy + 1];
+      const rowUp = rowJ[sy];
+      const stripe = this.stripeRow[sy + 1];
+      const checkR = this.checkRow[sy + 1];
+      let o = sy * W * 4;
+      for (let sx = 0; sx < W; sx++, o += 4) {
+        const ci = colI[sx];
+        const k = row < 0 || ci < 0 ? -1 : row + ci;
+        const s = k < 0 ? 5 : surf[k];
         let c: [number, number, number];
         switch (s) {
           case 0: // fairway: mowing stripes every 20 ft
-            c = Math.floor(wy / 20) & 1 ? C.fairA : C.fairB;
+            c = stripe ? C.fairA : C.fairB;
             break;
           case 1: // rough: dithered tufts
-            c = ((sx * 7 + sy * 13) % 11 === 0) ? C.roughDot : C.rough;
+            c = (sx * 7 + sy * 13) % 11 === 0 ? C.roughDot : C.rough;
             break;
           case 2: // green: checker mow
-            c = (Math.floor(wy / 10) + Math.floor(wx / 10)) & 1 ? C.green : C.greenB;
+            c = (checkR + this.checkCol[sx]) & 1 ? C.green : C.greenB;
             break;
           case 3:
-            c = ((sx * 5 + sy * 3) % 7 === 0) ? C.sandDot : C.sand;
+            c = (sx * 5 + sy * 3) % 7 === 0 ? C.sandDot : C.sand;
             break;
           case 4: // water: moving ripple lines
-            c = ((sy + shimmer + ((sx >> 3) & 1) * 2) % 6 === 0 && (sx % 5) < 3) ? C.waterLight : C.water;
+            c = (sy + shimmer + ((sx >> 3) & 1) * 2) % 6 === 0 && sx % 5 < 3 ? C.waterLight : C.water;
             break;
           default: // OB: hatched so it reads without colour
             c = ((sx + sy) & 3) === 0 ? C.obHatch : C.ob;
@@ -115,35 +148,23 @@ export class FieldRenderer {
         let r = c[0];
         let g = c[1];
         let b = c[2];
-        if (k >= 0 && s !== 4) {
-          // Contour every 2 ft of elevation, and a light hillshade.
-          const ku = this.cellAt(wx, wyUp);
-          if (ku >= 0) {
-            const h0 = this.height[k];
-            const h1 = this.height[ku];
-            if (Math.floor(h0 / 2) !== Math.floor(h1 / 2)) {
-              r *= 0.86;
-              g *= 0.86;
-              b *= 0.86;
-            } else {
-              const shade = 1 + (h1 - h0) * 0.6;
-              r *= shade;
-              g *= shade;
-              b *= shade;
-            }
-          }
-        }
-        // Boundary lines between OB and play, and around water.
         if (k >= 0) {
-          const kr = this.cellAt(wx + inv, wy);
-          const kd = this.cellAt(wx, wyUp);
-          const sr = kr < 0 ? 5 : this.surf[kr];
-          const sd = kd < 0 ? 5 : this.surf[kd];
-          if ((s === 5) !== (sr === 5) || (s === 5) !== (sd === 5)) {
-            [r, g, b] = C.edge;
+          const ku = rowUp < 0 ? -1 : rowUp + ci;
+          if (s !== 4 && ku >= 0) {
+            // Contour every 2 ft of elevation, and a light hillshade.
+            const h0 = height[k];
+            const h1 = height[ku];
+            const f = Math.floor(h0 / 2) !== Math.floor(h1 / 2) ? 0.86 : 1 + (h1 - h0) * 0.6;
+            r *= f;
+            g *= f;
+            b *= f;
           }
+          // Boundary lines between OB and play.
+          const cr = colI[sx + 1];
+          const sr = cr < 0 ? 5 : surf[row + cr];
+          const sd = ku < 0 ? 5 : surf[ku];
+          if ((s === 5) !== (sr === 5) || (s === 5) !== (sd === 5)) [r, g, b] = C.edge;
         }
-        const o = (sy * W + sx) * 4;
         d[o] = r;
         d[o + 1] = g;
         d[o + 2] = b;

@@ -8,6 +8,16 @@ export class Sfx {
   private ctx: AudioContext | null = null;
   private noise: AudioBuffer | null = null;
   enabled = true;
+  /** Called once the audio context exists (music starts from here). */
+  onUnlock: (() => void) | null = null;
+
+  /** The shared audio context, once a tap has started it. */
+  get context(): AudioContext | null {
+    return this.ctx;
+  }
+  get noiseBuffer(): AudioBuffer | null {
+    return this.noise;
+  }
 
   unlock() {
     try {
@@ -21,6 +31,7 @@ export class Sfx {
         for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
       }
       if (this.ctx.state === 'suspended') void this.ctx.resume();
+      this.onUnlock?.();
     } catch {
       this.ctx = null;
     }

@@ -35,6 +35,8 @@ import { simulateThrow, type ThrowResult } from '../sim/throw';
 import { CALM, rollWind, type Wind, windAt, windLabel } from '../sim/wind';
 import type { SwipeRead } from '../sim/putt';
 import { type Button, drawButton, hit } from '../ui/button';
+import { announce } from '../core/a11y';
+import { Particles, Shake } from '../render/particles';
 
 const DISCS = discsJson as Disc[];
 const RELEASES = [
@@ -127,6 +129,7 @@ type Gesture =
   | { kind: 'pinch' };
 
 export class HoleScene implements Scene {
+  readonly music = 'course' as const;
   private hole: HoleDef;
   private terrain: Terrain;
   private view: HoleRenderer;
@@ -163,6 +166,11 @@ export class HoleScene implements Scene {
   private toast: { title: string; sub: string; t: number; bad: boolean } | null = null;
   private hint: { text: string; t: number } | null = null;
   private projCache: { key: string; p: PuttProjector } | null = null;
+  /** Feel: world-space bursts, putt-view sparks (screen pixels) and screen shake. */
+  private fx = new Particles();
+  private fxScreen = new Particles();
+  private shake = new Shake();
+  private announced: object | null = null;
 
   private buttons: Button[];
   private doneButtons: Button[];
@@ -612,7 +620,12 @@ export class HoleScene implements Scene {
     const sub = g.penalty ? `CARRY ${Math.round(r.carry)} FT${red}` : `${Math.round(r.total)} FT · CARRY ${Math.round(r.carry)}${red}`;
     const ace = g.kind === 'holed' && this.state.throws === 0 && !this.opts.practice;
     this.toast = { title: ace ? 'ACE!' : REST_TEXT[g.kind], sub, t: 0, bad: g.penalty > 0 };
-    if (g.kind === 'holed') this.flash = 1.2;
+    if (g.kind === 'holed') {
+      this.flash = 1.2;
+      this.fx.burst('chains', this.hole.basket.x, this.hole.basket.y, 3);
+      this.shake.kick(ace ? 3 : 2, ace ? 0.6 : 0.35);
+    }
+    if (g.kind === 'water') this.fx.burst('splash', g.lie.x, g.lie.y);
     sfx.play(g.kind === 'holed' ? 'chains' : g.kind === 'water' ? 'splash' : g.kind === 'ob' ? 'ob' : 'tap');
     const from = this.distToBasket();
     this.state = applyThrow(this.state, this.cfg, { penalty: g.penalty, holed: g.kind === 'holed', lie: g.lie });
@@ -650,7 +663,11 @@ export class HoleScene implements Scene {
     if (penalty) title += surf === 'water' ? ' · SPLASH +1' : ' · OB +1';
     const sub = res.made ? `${Math.round(proj.distance)} FT PUTT` : `${Math.round(dist(lie, this.hole.basket))} FT TO GO`;
     this.toast = { title, sub, t: 0, bad: !res.made };
-    if (res.made) this.flash = 1.2;
+    if (res.made) {
+      this.flash = 1.2;
+      const b = proj.project(0, proj.distance, proj.rise + 3.6);
+      if (b) this.fxScreen.burst('chains', b.x, b.y, 0);
+    }
     sfx.play(res.made ? 'chains' : penalty ? 'splash' : 'land');
     const from = proj.distance;
     this.state = applyThrow(this.state, this.cfg, { penalty, holed: res.made, lie });
@@ -668,6 +685,7 @@ export class HoleScene implements Scene {
 
   private endGimme() {
     this.flash = 1.2;
+    this.fx.burst('chains', this.hole.basket.x, this.hole.basket.y, 3);
     this.toast = { title: 'TAP-IN', sub: 'GIMME', t: 0, bad: false };
     sfx.play('chains');
     const from = this.distToBasket(this.gimme!.from);
@@ -710,6 +728,8 @@ export class HoleScene implements Scene {
     this.mode = 'done';
     this.toast = null;
     const d = this.state.strokes - this.state.par;
+    const s = this.state;
+    announce(`Hole ${this.opts.holeNumber} done: ${s.pickedUp ? 'picked up' : SCORE_LABEL[scoreKey(s.strokes, s.par)]}, ${s.strokes} throws.`);
     sfx.play(this.state.pickedUp || d >= 2 ? 'bad' : d <= -1 ? 'good' : 'tap');
   }
 
@@ -769,6 +789,7 @@ export class HoleScene implements Scene {
     this.toast = { title, sub: `${r.name} · ${strokes} THROW${strokes === 1 ? '' : 'S'}`, t: 0, bad: false };
     if (th.made) {
       this.flash = 0.8;
+      this.fx.burst('chains', this.hole.basket.x, this.hole.basket.y, 3);
       sfx.play('chains');
     } else sfx.play(th.penalty ? 'splash' : 'land');
     this.rivalAnim = null;
@@ -780,6 +801,9 @@ export class HoleScene implements Scene {
 
   update(dt: number) {
     this.time += dt;
+    this.fx.update(dt);
+    this.fxScreen.update(dt);
+    this.shake.update(dt);
     if (this.flash > 0) this.flash -= dt;
     if (this.toast) this.toast.t += dt;
     if (this.hint) {
@@ -796,11 +820,21 @@ export class HoleScene implements Scene {
         const prev = this.playT;
         this.playT += dt;
         const f = this.current!.flight;
-        for (const th of f.treeHitTimes) if (th > prev && th <= this.playT) sfx.play('tree');
+        for (const th of f.treeHitTimes) {
+          if (th > prev && th <= this.playT) {
+            sfx.play('tree');
+            const q = samplePath(this.current!.path, th);
+            this.fx.burst('needles', q.x, q.y, Math.max(0, q.z - this.terrain.height(q.x, q.y)));
+          }
+        }
         if (f.landing.t > prev && f.landing.t <= this.playT && !f.holed) {
           const g = this.current!.ground;
+          const q = samplePath(this.current!.path, f.landing.t);
           if (g.skipped) sfx.play('skip');
           else if (g.kind !== 'water') sfx.play('land');
+          const surf = this.terrain.surface(q.x, q.y);
+          this.fx.burst(surf === 'water' ? 'splash' : surf === 'sand' ? 'sand' : 'dust', q.x, q.y);
+          if (this.current!.carry >= 300) this.shake.kick(2);
         }
         const end = this.current!.path[this.current!.path.length - 1].t;
         if (this.playT >= end) {
@@ -861,8 +895,12 @@ export class HoleScene implements Scene {
   // ---------- Render ----------
 
   render(ctx: CanvasRenderingContext2D) {
+    const sh = this.shake.offset(this.time);
+    ctx.save();
+    ctx.translate(sh.x, sh.y);
     if (this.puttViewVisible()) this.renderPuttView(ctx);
     else this.renderTopDown(ctx);
+    ctx.restore();
 
     this.drawHud(ctx);
     if (this.mode !== 'intro') {
@@ -907,6 +945,7 @@ export class HoleScene implements Scene {
     if (!holedNow && (!wet || Math.floor(this.time * 6) % 2 === 0)) drawDisc(ctx, ds.x, ds.y, alt * altScale, this.discColor, 1 + alt / 25);
 
     this.drawRival(ctx, cam);
+    this.fx.draw(ctx, (x, y) => worldToScreen(cam, x, y), altScale);
 
     if (this.mode === 'aim' && !this.gesture) {
       const r = 6 + Math.sin(this.time * (this.inGimme() ? 8 : 4)) * 1.5;
@@ -946,6 +985,7 @@ export class HoleScene implements Scene {
     const proj = this.putt?.proj ?? this.projector();
     const disc: PuttPoint | null = this.putt ? samplePutt(this.putt.res.path, this.putt.t) : null;
     drawPuttScene(ctx, proj, { bottom: TRAY_Y, time: this.time, disc, discColor: this.discColor, flash: this.flash, showHandDisc: this.mode === 'aim' });
+    this.fxScreen.draw(ctx, (x, y) => ({ x, y }), 2);
 
     // Read of the putt: distance, slope, wind.
     const y = HUD_H + 4;
@@ -1059,6 +1099,10 @@ export class HoleScene implements Scene {
   private drawToast(ctx: CanvasRenderingContext2D) {
     if (!this.toast || this.mode === 'flight' || this.mode === 'putting' || this.mode === 'done') return;
     const t = this.toast;
+    if (this.announced !== t) {
+      this.announced = t;
+      announce(`${t.title}. ${t.sub}`);
+    }
     if (this.mode === 'aim' && t.t > 3) return;
     const y = HUD_H + 30;
     panel(ctx, 14, y, VIEW_W - 28, 22, PAL.night1, t.bad ? PAL.red : PAL.amber);
@@ -1084,12 +1128,53 @@ export class HoleScene implements Scene {
   private drawIntro(ctx: CanvasRenderingContext2D) {
     const h = this.hole;
     const y = 96;
-    panel(ctx, 10, y, VIEW_W - 20, 50, 'rgba(13,11,19,0.88)', PAL.amber);
+    panel(ctx, 10, y, VIEW_W - 20, 62, 'rgba(13,11,19,0.88)', PAL.amber);
     drawText(ctx, `HOLE ${this.opts.holeNumber} · PAR ${h.par} · ${h.lengthFt} FT`, VIEW_W / 2, y + 6, PAL.amber, 'center');
     drawText(ctx, h.name, VIEW_W / 2, y + 17, PAL.ink, 'center');
     if (h.note) drawText(ctx, h.note, VIEW_W / 2, y + 28, PAL.inkDim, 'center');
     if (this.opts.introTag) drawTextShadow(ctx, this.opts.introTag, VIEW_W / 2, y - 10, PAL.amber, PAL.night0, 'center');
-    drawText(ctx, 'TAP TO TEE OFF', VIEW_W / 2, y + 40, PAL.haze, 'center');
+    this.drawHazardKey(ctx, y + 39);
+    drawText(ctx, 'TAP TO TEE OFF', VIEW_W / 2, y + 52, PAL.haze, 'center');
+  }
+
+  /** Hazards on this hole as icon + word, so they read without relying on colour. */
+  private drawHazardKey(ctx: CanvasRenderingContext2D, y: number) {
+    const kinds = new Set(this.hole.terrain.regions.map((r) => r.surface));
+    const items: { label: string; icon: (x: number) => void }[] = [];
+    if (kinds.has('water'))
+      items.push({ label: 'WATER', icon: (x) => {
+        ctx.fillStyle = PAL.waterLight;
+        for (let i = 0; i < 5; i++) ctx.fillRect(x + i, y + 1 + (i % 2), 1, 1);
+        for (let i = 0; i < 5; i++) ctx.fillRect(x + i, y + 3 + (i % 2), 1, 1);
+      } });
+    if (kinds.has('sand'))
+      items.push({ label: 'SAND', icon: (x) => {
+        ctx.fillStyle = PAL.sand;
+        for (const [dx, dy] of [[0, 4], [2, 2], [4, 4], [1, 0], [3, 0]]) ctx.fillRect(x + dx, y + dy, 1, 1);
+      } });
+    if (this.hole.terrain.bounds || kinds.has('ob'))
+      items.push({ label: 'OB', icon: (x) => {
+        ctx.fillStyle = PAL.white;
+        for (let i = 0; i < 5; i++) ctx.fillRect(x + i, y + 4 - i, 1, 1);
+        ctx.fillRect(x, y, 5, 1);
+      } });
+    if (this.hole.terrain.trees.length >= 6)
+      items.push({ label: 'TREES', icon: (x) => {
+        ctx.fillStyle = PAL.pineLight;
+        ctx.fillRect(x + 2, y, 1, 1);
+        ctx.fillRect(x + 1, y + 1, 3, 1);
+        ctx.fillRect(x, y + 2, 5, 1);
+        ctx.fillStyle = PAL.inkDim;
+        ctx.fillRect(x + 2, y + 3, 1, 2);
+      } });
+    if (!items.length) return;
+    const w = items.reduce((s, it) => s + 8 + it.label.length * 4 + 6, -6);
+    let x = Math.round(VIEW_W / 2 - w / 2);
+    for (const it of items) {
+      it.icon(x);
+      drawText(ctx, it.label, x + 8, y, PAL.inkDim);
+      x += 8 + it.label.length * 4 + 6;
+    }
   }
 
   private drawDone(ctx: CanvasRenderingContext2D) {

@@ -131,3 +131,16 @@ describe('resolving a putt', () => {
     expect(putt(r, 50, 1, 7)).toEqual(putt(r, 50, 1, 7));
   });
 });
+
+describe('long putts carry risk', () => {
+  it('a perfectly weighted putt always drops from close range but not always from 60 ft', () => {
+    const rate = (d: number) => {
+      let made = 0;
+      for (let k = 1; k <= 200; k++) if (putt(straight(idealPuttPower(d, 0, cfg)), d, 0, k).made) made++;
+      return made / 200;
+    };
+    expect(rate(15)).toBe(1);
+    expect(rate(60)).toBeLessThan(0.8);
+    expect(rate(60)).toBeGreaterThan(0.15);
+  });
+});

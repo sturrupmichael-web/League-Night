@@ -10,6 +10,7 @@ html, body {
   background: var(--bg);
   overflow: hidden;
   overscroll-behavior: none;
+  touch-action: manipulation;
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
@@ -29,6 +30,7 @@ html, body {
   image-rendering: crisp-edges;
   touch-action: none;
   background: #000;
+  visibility: hidden;
 }
 #rotate {
   display: none;
@@ -57,4 +59,14 @@ html, body {
 /* Only nag touch devices: desktop monitors are landscape too. */
 @media (orientation: landscape) and (pointer: coarse) and (max-height: 600px) {
   #rotate { display: flex; }
+}
+
+/* Screen-reader-only live region (see core/a11y.ts). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }

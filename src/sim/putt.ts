@@ -123,11 +123,16 @@ const groundAt = (v: number, s: PuttSetup) => (s.distance > 0 ? (s.rise * v) / s
 export function resolvePutt(read: Extract<SwipeRead, { cancel: false }>, setup: PuttSetup, rng: Rng, cfg: Config): PuttResult {
   const spitRoll = rng();
   const spitDist = rng();
+  // Release wobble: nobody is a machine. It grows with distance past the "circle", so
+  // long putts are a real gamble while short ones stay about the swipe.
+  const reach = Math.max(0, (setup.distance - cfg.puttWobbleFromFt) / 30);
+  const aimWobble = (rng() * 2 - 1) * cfg.puttWobbleDeg * DEG * reach;
+  const powerWobble = 1 + (rng() * 2 - 1) * cfg.puttPowerWobble * reach;
   const th = cfg.puttLaunchDeg * DEG;
-  const speed = puttLaunchSpeed(read.power, cfg);
+  const speed = puttLaunchSpeed(read.power * powerWobble, cfg);
   let vf = speed * Math.cos(th);
   let vz = speed * Math.sin(th);
-  let vu = vf * Math.tan(read.aim);
+  let vu = vf * Math.tan(read.aim + aimWobble);
   const bendAcc = read.bend * cfg.puttBendAccel;
   const windAcc = (setup.crosswind ?? 0) * cfg.puttWindDrift;
   let u = 0;

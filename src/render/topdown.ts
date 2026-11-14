@@ -39,7 +39,7 @@ export class HoleRenderer {
       const s = worldToScreen(cam, t.x, t.y);
       const r = t.r * cam.zoom;
       if (s.y < -r - 4 || s.y > 330 + r || s.x < -r - 4 || s.x > 184 + r) continue;
-      props.push({ y: s.y, draw: () => drawTree(ctx, s.x, s.y, r) });
+      props.push({ y: s.y, draw: () => drawTree(ctx, s.x, s.y, r, t.x, t.y) });
     }
     const b = worldToScreen(cam, h.basket.x, h.basket.y);
     props.push({ y: b.y, draw: () => drawBasket(ctx, b.x, b.y, opts.flash) });

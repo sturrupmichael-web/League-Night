@@ -8,6 +8,8 @@ import discsJson from './content/discs.json';
 import { PRACTICE_HOLE } from './content/practiceField';
 import rivalsJson from './content/rivals.json';
 import { sfx } from './core/audio';
+import { motion } from './core/motion';
+import { music } from './core/music';
 import type { Game } from './core/game';
 import { loadSave, type SaveData, writeSave } from './core/save';
 import { VIEW_W } from './core/screen';
@@ -83,6 +85,8 @@ export class App {
     private hooks: AppHooks = {},
   ) {
     sfx.enabled = this.save.settings.sfx;
+    music.setEnabled(this.save.settings.music);
+    motion.set(this.save.settings.motion);
     this.friends = new Friends({
       game,
       course: this.course,
@@ -141,7 +145,7 @@ export class App {
       small(4, 254, 'WHO YOU ARE', 'CHASERS', () => this.chasers(() => this.title())),
       small(62, 254, 'CRED', 'LOCKER', () => this.locker()),
       small(120, 254, 'SIX PAGES', 'HOW TO', () => this.game.set(new HowToScene(() => this.title()))),
-      small(4, 277, 'SOUND · HINTS', 'SETTINGS', () => this.settings()),
+      small(4, 277, 'MUSIC · SOUND', 'SETTINGS', () => this.settings()),
       small(62, 277, '', 'CREDITS', () => this.credits()),
     );
     const ch = this.chaser;
@@ -732,8 +736,17 @@ export class App {
     );
   }
 
-  private toggles() {
+  private toggles(): MenuItem[] {
     return [
+      {
+        caption: 'MUSIC',
+        value: () => (this.save.settings.music ? 'ON' : 'OFF'),
+        onTap: () => {
+          this.save.settings.music = !this.save.settings.music;
+          music.setEnabled(this.save.settings.music);
+          this.persist();
+        },
+      },
       {
         caption: 'SOUND EFFECTS',
         value: () => (this.save.settings.sfx ? 'ON' : 'OFF'),
@@ -762,6 +775,16 @@ export class App {
         top: 80,
         items: [
           ...this.toggles(),
+          {
+            caption: 'NO SHAKE, CALMER EFFECTS',
+            value: () => `REDUCE MOTION: ${{ auto: 'AUTO', on: 'ON', off: 'OFF' }[this.save.settings.motion]}`,
+            onTap: () => {
+              const order = ['auto', 'on', 'off'] as const;
+              this.save.settings.motion = order[(order.indexOf(this.save.settings.motion) + 1) % 3];
+              motion.set(this.save.settings.motion);
+              this.persist();
+            },
+          },
           {
             caption: 'THROWING HAND',
             value: () => (this.save.settings.hand === 'right' ? 'RIGHTY' : 'LEFTY'),
@@ -796,7 +819,7 @@ export class App {
       ['CHASERS AND LEAGUE REGULARS', PAL.haze],
       ['ALL CHARACTERS ARE FICTIONAL', PAL.ink],
       ['', ''],
-      ['SOUND', PAL.haze],
+      ['MUSIC AND SOUND', PAL.haze],
       ['SYNTHESISED IN YOUR BROWSER', PAL.ink],
       ['', ''],
       ['TYPE', PAL.haze],

@@ -3,6 +3,7 @@
  * draw on top of whatever is beneath them.
  */
 import { sfx } from './audio';
+import { music } from './music';
 import type { InputHandler, PointerInfo } from './input';
 import type { Scene } from './scene';
 
@@ -15,6 +16,7 @@ export class Game implements InputHandler {
 
   set(scene: Scene) {
     this.stack = [scene];
+    music.play(scene.music ?? 'menu');
   }
   push(scene: Scene) {
     this.top?.cancel?.({} as PointerInfo, new Map());

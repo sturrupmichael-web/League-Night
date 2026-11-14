@@ -26,6 +26,7 @@ export function createScreen(canvas: HTMLCanvasElement): Screen {
     if (scale < 1) scale = Math.min((availW * dpr) / VIEW_W, (availH * dpr) / VIEW_H);
     canvas.style.width = `${(VIEW_W * scale) / dpr}px`;
     canvas.style.height = `${(VIEW_H * scale) / dpr}px`;
+    canvas.style.visibility = 'visible'; // hidden until sized, so the page never jumps
   };
   fit();
   window.addEventListener('resize', fit);

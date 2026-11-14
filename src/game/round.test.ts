@@ -85,7 +85,7 @@ describe('save', () => {
     expect(loadSave(s)).toEqual(defaultSave());
     expect(loadSave(null)).toEqual(defaultSave());
     expect(migrate({ v: 99 })).toEqual(defaultSave());
-    expect(migrate({ v: 1, settings: { sfx: false } }).settings).toEqual({ sfx: false, hints: true, hand: 'right' });
+    expect(migrate({ v: 1, settings: { sfx: false } }).settings).toEqual({ sfx: false, hints: true, hand: 'right', music: true, motion: 'auto' });
     expect(migrate({ v: 1, round: { nonsense: true } }).round).toBeNull();
     const throwing = { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); } };
     expect(loadSave(throwing)).toEqual(defaultSave());

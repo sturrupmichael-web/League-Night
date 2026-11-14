@@ -41,6 +41,7 @@ type Live =
   | { kind: 'putt'; proj: PuttProjector; path: PuttPoint[]; end: number; made: boolean; color: string };
 
 export class ReplayScene implements Scene {
+  readonly music = 'course' as const;
   private i = 0;
   private t = 0;
   private live: Live | null = null;

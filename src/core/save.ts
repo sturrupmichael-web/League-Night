@@ -11,6 +11,9 @@ export interface Settings {
   sfx: boolean;
   hints: boolean;
   hand: 'right' | 'left';
+  music: boolean;
+  /** Reduced motion: follow the system, or force it on or off. */
+  motion: 'auto' | 'on' | 'off';
 }
 
 export interface SaveData {
@@ -41,7 +44,7 @@ export interface SaveData {
 
 export const defaultSave = (): SaveData => ({
   v: SAVE_VERSION,
-  settings: { sfx: true, hints: true, hand: 'right' },
+  settings: { sfx: true, hints: true, hand: 'right', music: true, motion: 'auto' },
   round: null,
   offeredPractice: false,
   roundsFinished: 0,
