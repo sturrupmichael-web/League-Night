@@ -1,0 +1,10 @@
+[
+  { "id": "tap-in",     "name": "TAP-IN",      "type": "putter",   "speed": 2,  "glide": 3, "turn": 0,  "fade": 1, "color": "#f4e9cd", "blurb": "Straight and honest. Sits where it lands." },
+  { "id": "last-call",  "name": "LAST CALL",   "type": "putter",   "speed": 3,  "glide": 4, "turn": 0,  "fade": 2, "color": "#e86a5e", "blurb": "A touch of fade for the closing approach." },
+  { "id": "weeknight",  "name": "WEEKNIGHT",   "type": "midrange", "speed": 5,  "glide": 5, "turn": -1, "fade": 1, "color": "#7cc4d8", "blurb": "Easy-going mid that holds a line." },
+  { "id": "scorekeep",  "name": "SCOREKEEPER", "type": "midrange", "speed": 5,  "glide": 4, "turn": 0,  "fade": 3, "color": "#f2b544", "blurb": "Stubborn. Always finishes its fade." },
+  { "id": "carpool",    "name": "CARPOOL",     "type": "fairway",  "speed": 7,  "glide": 5, "turn": 0,  "fade": 2, "color": "#8fd16a", "blurb": "Reliable ride for most tee shots." },
+  { "id": "floodlight", "name": "FLOODLIGHT",  "type": "fairway",  "speed": 8,  "glide": 5, "turn": -2, "fade": 1, "color": "#c792ea", "blurb": "Turns over easy. Great for long lines right." },
+  { "id": "overtime",   "name": "OVERTIME",    "type": "distance", "speed": 12, "glide": 5, "turn": -1, "fade": 3, "color": "#ff8a3d", "blurb": "Big arm required. Underpower it and it dumps." },
+  { "id": "night-owl",  "name": "NIGHT OWL",   "type": "distance", "speed": 11, "glide": 6, "turn": -3, "fade": 2, "color": "#5a7bd8", "blurb": "Floaty bomber. Watch it flip in a headwind." }
+]

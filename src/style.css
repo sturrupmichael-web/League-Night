@@ -1,0 +1,60 @@
+:root {
+  --bg: #14111c;
+  --ink: #f4e9cd;
+  --accent: #f2b544;
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+#stage {
+  position: fixed;
+  inset: 0;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#game {
+  display: block;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  touch-action: none;
+  background: #000;
+}
+#rotate {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  background: var(--bg);
+  color: var(--ink);
+  font: 700 14px/1.6 ui-monospace, monospace;
+  letter-spacing: 0.1em;
+  text-align: center;
+  align-items: center;
+  justify-content: center;
+}
+#rotate .sub { opacity: 0.6; font-size: 11px; }
+.rotate-phone {
+  width: 36px;
+  height: 60px;
+  margin: 0 auto 16px;
+  border: 4px solid var(--accent);
+  border-radius: 6px;
+  animation: tip 2s ease-in-out infinite;
+}
+@keyframes tip { 0%, 30% { transform: rotate(-90deg); } 60%, 100% { transform: rotate(0deg); } }
+@media (prefers-reduced-motion: reduce) { .rotate-phone { animation: none; } }
+/* Only nag touch devices: desktop monitors are landscape too. */
+@media (orientation: landscape) and (pointer: coarse) and (max-height: 600px) {
+  #rotate { display: flex; }
+}
