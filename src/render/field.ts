@@ -6,59 +6,18 @@ import type { Surface, Terrain } from '../sim/terrain';
 import { PAL } from './palette';
 
 export interface Camera {
-  /** World point shown at the anchor (the focus). */
+  /** World point shown at the anchor. */
   x: number;
   y: number;
-  /** Screen pixels per foot at the focus. */
+  /** Screen pixels per foot. */
   zoom: number;
-  /** Screen position of the focus. */
+  /** Screen position of the camera point. */
   ax: number;
   ay: number;
-  /** Camera pitch below the horizon in radians: PI/2 looks straight down. */
-  pitch: number;
-  /** Camera distance from the focus, in screen pixels. Smaller = stronger perspective. */
-  dist: number;
 }
 
-export interface ScreenPoint {
-  x: number;
-  y: number;
-  /** Perspective scale at this point (1 at the focus, smaller further away). */
-  s: number;
-}
-
-/**
- * Pinhole projection of a world point (h = feet above the local ground) onto the screen.
- * The ground is drawn as a flat plane; slopes are shown by shading, not geometry.
- */
-export function worldToScreen(c: Camera, x: number, y: number, h = 0): ScreenPoint {
-  const dx = x - c.x;
-  const dy = y - c.y;
-  const sp = Math.sin(c.pitch);
-  const cp = Math.cos(c.pitch);
-  const p = c.zoom / c.dist;
-  const s = 1 / Math.max(0.05, 1 + p * (dy * cp - h * sp));
-  return { x: c.ax + c.zoom * dx * s, y: c.ay - c.zoom * (dy * sp + h * cp) * s, s };
-}
-
-/** Inverse of worldToScreen for the ground plane. Points above the horizon clamp to far away. */
-export function screenToWorld(c: Camera, sx: number, sy: number): { x: number; y: number } {
-  const sp = Math.sin(c.pitch);
-  const cp = Math.cos(c.pitch);
-  const p = c.zoom / c.dist;
-  const Y = (c.ay - sy) / c.zoom;
-  const den = Math.max(0.02, sp - Y * p * cp);
-  const dy = Y / den;
-  const s = 1 / (1 + p * dy * cp);
-  return { x: c.x + (sx - c.ax) / (c.zoom * s), y: c.y + dy };
-}
-
-/** Screen row of the horizon (may be far above the screen). */
-export function horizonY(c: Camera): number {
-  const cp = Math.cos(c.pitch);
-  if (cp < 1e-4) return -1e9;
-  return c.ay - (c.dist * Math.sin(c.pitch)) / cp;
-}
+export const worldToScreen = (c: Camera, x: number, y: number) => ({ x: c.ax + (x - c.x) * c.zoom, y: c.ay - (y - c.y) * c.zoom });
+export const screenToWorld = (c: Camera, sx: number, sy: number) => ({ x: c.x + (sx - c.ax) / c.zoom, y: c.y - (sy - c.ay) / c.zoom });
 
 const SURF: Surface[] = ['fairway', 'rough', 'green', 'sand', 'water', 'ob'];
 
@@ -78,13 +37,6 @@ const C = {
   ob: hex(PAL.ob),
   obHatch: hex(PAL.night3),
   edge: hex(PAL.white),
-  woods: hex(PAL.pine),
-  woodsB: hex(PAL.grassDark),
-  fog: hex(PAL.dusk),
-  night: hex(PAL.night2),
-  treeline: hex(PAL.night1),
-  treelineB: hex(PAL.night3),
-  star: hex(PAL.inkDim),
 };
 
 export class FieldRenderer {
@@ -131,44 +83,22 @@ export class FieldRenderer {
     const d = img.data;
     const W = img.width;
     const H = img.height;
+    const inv = 1 / cam.zoom;
     const shimmer = Math.floor(time * 3);
-    const sp = Math.sin(cam.pitch);
-    const cp = Math.cos(cam.pitch);
-    const p = cam.zoom / cam.dist;
-    const hz = horizonY(cam);
-    let prevWy = Number.NaN;
     for (let sy = 0; sy < H; sy++) {
-      const Y = (cam.ay - (sy + 0.5)) / cam.zoom;
-      const den = sp - Y * p * cp;
-      if (den <= 0.004) {
-        this.skyRow(d, W, sy, hz);
-        prevWy = Number.NaN;
-        continue;
-      }
-      const dy = Y / den;
-      const k = 1 / (1 + p * dy * cp);
-      const inv = 1 / (cam.zoom * k);
-      const wy = cam.y + dy;
-      const wyUp = Number.isNaN(prevWy) ? wy + inv : prevWy;
-      prevWy = wy;
-      // Distance haze: far ground fades into the dusk.
-      const depth = 1 / k;
-      const fog = Math.min(0.75, Math.max(0, (depth - 1.15) * 0.32));
-      // Near ground is a touch brighter than the focus.
-      const lamp = 1 + Math.max(-0.08, Math.min(0.1, (k - 1) * 0.25));
-      // Pixels per world foot here: drives texture detail so far ground does not shimmer.
-      const ppf = cam.zoom * k;
+      const wy = cam.y - (sy + 0.5 - cam.ay) * inv;
+      const wyUp = wy + inv;
       for (let sx = 0; sx < W; sx++) {
         const wx = cam.x + (sx + 0.5 - cam.ax) * inv;
-        const kc = this.cellAt(wx, wy);
-        const s = kc < 0 ? 6 : this.surf[kc];
+        const k = this.cellAt(wx, wy);
+        const s = k < 0 ? 5 : this.surf[k];
         let c: [number, number, number];
         switch (s) {
           case 0: // fairway: mowing stripes every 20 ft
             c = Math.floor(wy / 20) & 1 ? C.fairA : C.fairB;
             break;
-          case 1: // rough: dithered tufts, pinned to the ground so they recede with it
-            c = ppf > 0.35 && hash(Math.floor(wx * 0.7), Math.floor(wy * 0.7)) % 9 === 0 ? C.roughDot : C.rough;
+          case 1: // rough: dithered tufts
+            c = ((sx * 7 + sy * 13) % 11 === 0) ? C.roughDot : C.rough;
             break;
           case 2: // green: checker mow
             c = (Math.floor(wy / 10) + Math.floor(wx / 10)) & 1 ? C.green : C.greenB;
@@ -177,45 +107,41 @@ export class FieldRenderer {
             c = ((sx * 5 + sy * 3) % 7 === 0) ? C.sandDot : C.sand;
             break;
           case 4: // water: moving ripple lines
-            c = ((sy + shimmer + ((sx >> 3) & 1) * 2) % (ppf > 0.3 ? 6 : 3) === 0 && (sx % 5) < 3) ? C.waterLight : C.water;
+            c = ((sy + shimmer + ((sx >> 3) & 1) * 2) % 6 === 0 && (sx % 5) < 3) ? C.waterLight : C.water;
             break;
-          case 5: // OB: hatched so it reads without colour
+          default: // OB: hatched so it reads without colour
             c = ((sx + sy) & 3) === 0 ? C.obHatch : C.ob;
-            break;
-          default: // beyond the map: dark woods floor
-            c = hash(Math.floor(wx / 2), Math.floor(wy / 2)) % 5 === 0 ? C.woodsB : C.woods;
         }
         let r = c[0];
         let g = c[1];
         let b = c[2];
-        let shade = lamp;
-        if (kc >= 0 && s !== 4) {
-          // Contour every 2 ft of elevation, and a hillshade lit from the far side.
+        if (k >= 0 && s !== 4) {
+          // Contour every 2 ft of elevation, and a light hillshade.
           const ku = this.cellAt(wx, wyUp);
           if (ku >= 0) {
-            const h0 = this.height[kc];
+            const h0 = this.height[k];
             const h1 = this.height[ku];
-            if (Math.floor(h0 / 2) !== Math.floor(h1 / 2)) shade *= 0.84;
-            else shade *= 1 + Math.max(-0.35, Math.min(0.35, ((h1 - h0) / Math.max(0.5, wyUp - wy)) * 1.6));
+            if (Math.floor(h0 / 2) !== Math.floor(h1 / 2)) {
+              r *= 0.86;
+              g *= 0.86;
+              b *= 0.86;
+            } else {
+              const shade = 1 + (h1 - h0) * 0.6;
+              r *= shade;
+              g *= shade;
+              b *= shade;
+            }
           }
-          const kr = this.cellAt(wx + inv, wy);
-          if (kr >= 0) shade *= 1 + Math.max(-0.15, Math.min(0.15, (this.height[kr] - this.height[kc]) * 0.4));
         }
-        r *= shade;
-        g *= shade;
-        b *= shade;
-        // Boundary lines between OB and play.
-        if (kc >= 0) {
+        // Boundary lines between OB and play, and around water.
+        if (k >= 0) {
           const kr = this.cellAt(wx + inv, wy);
           const kd = this.cellAt(wx, wyUp);
           const sr = kr < 0 ? 5 : this.surf[kr];
           const sd = kd < 0 ? 5 : this.surf[kd];
-          if ((s === 5) !== (sr === 5) || (s === 5) !== (sd === 5)) [r, g, b] = C.edge;
-        }
-        if (fog > 0) {
-          r += (C.fog[0] - r) * fog;
-          g += (C.fog[1] - g) * fog;
-          b += (C.fog[2] - b) * fog;
+          if ((s === 5) !== (sr === 5) || (s === 5) !== (sd === 5)) {
+            [r, g, b] = C.edge;
+          }
         }
         const o = (sy * W + sx) * 4;
         d[o] = r;
@@ -226,31 +152,4 @@ export class FieldRenderer {
     }
     ctx.putImageData(img, 0, 0);
   }
-
-  /** Sky above the horizon: dusk gradient, a few stars and a ragged tree line. */
-  private skyRow(d: Uint8ClampedArray, W: number, sy: number, hz: number) {
-    const above = hz - sy;
-    const t = Math.min(1, Math.max(0, above / 90));
-    const c0 = C.fog;
-    const c1 = C.night;
-    for (let sx = 0; sx < W; sx++) {
-      let r = c0[0] + (c1[0] - c0[0]) * t;
-      let g = c0[1] + (c1[1] - c0[1]) * t;
-      let b = c0[2] + (c1[2] - c0[2]) * t;
-      const treeH = 5 + ((hash(sx >> 1, 7) % 5) + (hash(sx >> 3, 3) % 4)) ;
-      if (above < treeH) [r, g, b] = above < treeH - 2 ? C.treeline : C.treelineB;
-      else if (above > 20 && hash(sx, sy) % 97 === 0) [r, g, b] = C.star;
-      const o = (sy * W + sx) * 4;
-      d[o] = r;
-      d[o + 1] = g;
-      d[o + 2] = b;
-      d[o + 3] = 255;
-    }
-  }
-}
-
-function hash(a: number, b: number): number {
-  let h = (a * 374761393 + b * 668265263) | 0;
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  return (h ^ (h >>> 16)) >>> 0;
 }

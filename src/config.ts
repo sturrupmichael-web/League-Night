@@ -144,12 +144,6 @@ export const DEFAULT_CONFIG = {
   // ---- Camera ----
   minZoom: 0.2,
   maxZoom: 1.6,
-  /** Course camera tilt below the horizon, degrees (90 = straight down). */
-  camPitchDeg: 52,
-  /** Tilt used for the whole-hole overview. */
-  camOverviewPitchDeg: 72,
-  /** Camera distance in screen pixels: smaller = stronger perspective. */
-  camDistPx: 150,
 
   // ---- Input ----
   maxPullPx: 64,
@@ -211,9 +205,6 @@ export const CONFIG_META: ConfigMeta[] = [
   m('Putting', 'spitRatio', 1, 1.5, 0.01),
   m('Putting', 'blowThroughRatio', 1, 2, 0.01),
   m('Putting', 'gimmeFt', 0, 20, 1),
-  m('Camera', 'camPitchDeg', 30, 90, 1),
-  m('Camera', 'camOverviewPitchDeg', 30, 90, 1),
-  m('Camera', 'camDistPx', 60, 1000, 5),
   m('Input', 'maxPullPx', 30, 120, 1),
   m('Input', 'previewFraction', 0, 1, 0.05),
 ];
