@@ -2,12 +2,10 @@
  * The practice field: an open, gently rising park with distance markers, one basket,
  * and a little of everything to test against (pond, bunker, rough, trees, OB lines).
  */
-import type { Heightmap, Polygon, TerrainSpec, Tree } from '../sim/terrain';
-import type { Vec2 } from '../sim/math';
+import { parseHole } from '../game/hole';
+import type { Heightmap, Polygon, Tree } from '../sim/terrain';
 
-export const PRACTICE_TEE: Vec2 = { x: 0, y: 0 };
-export const PRACTICE_BASKET: Vec2 = { x: 18, y: 320 };
-export const PRACTICE_MARKERS = [50, 100, 150, 200, 250, 300, 350, 400, 450, 500];
+const BASKET = { x: 18, y: 320 };
 
 const W = 160; // half-width in ft
 const TOP = 620;
@@ -54,15 +52,21 @@ const trees: Tree[] = [
   { x: -130, y: 360, r: 9 },
 ];
 
-export const PRACTICE_FIELD: TerrainSpec = {
-  defaultSurface: 'rough',
+export const PRACTICE_HOLE = parseHole({
+  id: 0,
+  name: 'PRACTICE FIELD',
+  par: 3,
+  lengthFt: 320,
+  tee: [0, 0],
+  basket: [BASKET.x, BASKET.y],
   bounds: rect(-W, BOTTOM, W, TOP),
-  regions: [
-    { surface: 'fairway', poly: [[-30, -40], [30, -40], [55, 150], [60, 330], [50, 560], [-50, 560], [-60, 330], [-55, 150]] },
-    { surface: 'green', poly: blob(PRACTICE_BASKET.x, PRACTICE_BASKET.y, 34, 30, [1, 1.05, 0.95, 1, 1.08, 0.97, 1, 1.02]) },
-    { surface: 'water', poly: blob(-95, 235, 48, 38, [1, 0.9, 1.1, 1, 0.85, 1.05, 1.15, 0.95, 1, 0.9]) },
-    { surface: 'sand', poly: blob(82, 170, 22, 13, [1, 1.1, 0.9, 1, 1.05, 0.95]) },
-  ],
+  fairway: [[[-30, -40], [30, -40], [55, 150], [60, 330], [50, 560], [-50, 560], [-60, 330], [-55, 150]]],
+  green: [blob(BASKET.x, BASKET.y, 34, 30, [1, 1.05, 0.95, 1, 1.08, 0.97, 1, 1.02])],
+  water: [blob(-95, 235, 48, 38, [1, 0.9, 1.1, 1, 0.85, 1.05, 1.15, 0.95, 1, 0.9])],
+  sand: [blob(82, 170, 22, 13, [1, 1.1, 0.9, 1, 1.05, 0.95])],
   trees,
   heightmap: heightmap(),
-};
+  windRange: [0, 0],
+  note: 'WARM UP. NO SCORE.',
+  markers: [50, 100, 150, 200, 250, 300, 350, 400, 450, 500],
+});

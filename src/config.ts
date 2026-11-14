@@ -104,6 +104,47 @@ export const DEFAULT_CONFIG = {
   hammerTumbleChance: 0.5,
   hammerTumbleMax: 16,
 
+  // ---- Putting ----
+  /** Lie distance (ft) at which a putter switches to the putting view. */
+  puttRangeFt: 70,
+  /** Lie distance (ft) for a tap-to-drop gimme. */
+  gimmeFt: 8,
+  /** Swipe length (view px) for full putt power. */
+  puttFullSwipePx: 150,
+  puttMinSwipePx: 10,
+  /** Finger speed (px/s) at release that counts as parked: cancels the putt. */
+  puttParkSpeed: 25,
+  /** Release speed (px/s) of a "normal" swipe. Faster snaps add power, slower pushes lose it. */
+  puttSnapRef: 450,
+  puttSnapGain: 0.15,
+  /** How much the swipe's sideways angle steers the putt (0..1). */
+  puttAimGain: 0.3,
+  /** How much a curved swipe bends the putt. */
+  puttBendGain: 4,
+  /** Sideways acceleration (ft/s²) of a full bend. */
+  puttBendAccel: 6,
+  /** Launch speed (ft/s) at full power. Power maps to speed by square root, so distance is roughly linear in swipe. */
+  puttSpeedFull: 75,
+  puttLaunchDeg: 12,
+  puttReleaseHeight: 3,
+  puttWindDrift: 0.12,
+  /** Basket geometry, relative to basket ground (ft). */
+  chainHalfWidth: 0.85,
+  centerHalfWidth: 0.35,
+  cageHalfWidth: 1.15,
+  cageBottom: 0.8,
+  /** Arrival speed, as a multiple of a perfectly weighted putt's, where off-centre putts start to spit out / always blow through. */
+  spitRatio: 1.04,
+  blowThroughRatio: 1.25,
+
+  // ---- Rules ----
+  /** Max strokes on a hole = par + this. */
+  maxOverPar: 5,
+
+  // ---- Camera ----
+  minZoom: 0.2,
+  maxZoom: 1.6,
+
   // ---- Input ----
   maxPullPx: 64,
   grabRadiusPx: 22,
@@ -152,6 +193,18 @@ export const CONFIG_META: ConfigMeta[] = [
   m('Ground', 'rollerChance', 0, 1, 0.05),
   m('Ground', 'skipChance', 0, 1, 0.05),
   m('Ground', 'skipMinSpeed', 10, 90, 1),
+  m('Putting', 'puttFullSwipePx', 60, 260, 1),
+  m('Putting', 'puttSpeedFull', 40, 110, 1),
+  m('Putting', 'puttLaunchDeg', 4, 25, 0.5),
+  m('Putting', 'puttSnapRef', 100, 1200, 10),
+  m('Putting', 'puttSnapGain', 0, 0.5, 0.01),
+  m('Putting', 'puttAimGain', 0, 1, 0.01),
+  m('Putting', 'puttBendGain', 0, 12, 0.1),
+  m('Putting', 'puttBendAccel', 0, 20, 0.5),
+  m('Putting', 'chainHalfWidth', 0.3, 1.5, 0.05),
+  m('Putting', 'spitRatio', 1, 1.5, 0.01),
+  m('Putting', 'blowThroughRatio', 1, 2, 0.01),
+  m('Putting', 'gimmeFt', 0, 20, 1),
   m('Input', 'maxPullPx', 30, 120, 1),
   m('Input', 'previewFraction', 0, 1, 0.05),
 ];

@@ -11,6 +11,8 @@ export interface InputHandler {
   move?(p: PointerInfo, all: Map<number, PointerInfo>): void;
   up?(p: PointerInfo, all: Map<number, PointerInfo>): void;
   cancel?(p: PointerInfo, all: Map<number, PointerInfo>): void;
+  /** Mouse wheel / trackpad: deltaY > 0 = zoom out. */
+  wheel?(x: number, y: number, deltaY: number): void;
 }
 
 export class Input {
@@ -24,6 +26,15 @@ export class Input {
     c.addEventListener('pointerup', this.onUp);
     c.addEventListener('pointercancel', this.onCancel);
     c.addEventListener('contextmenu', (e) => e.preventDefault());
+    c.addEventListener(
+      'wheel',
+      (e) => {
+        e.preventDefault();
+        const v = this.screen.toView(e.clientX, e.clientY);
+        this.handler?.wheel?.(v.x, v.y, e.deltaY);
+      },
+      { passive: false },
+    );
   }
 
   private onDown = (e: PointerEvent) => {
