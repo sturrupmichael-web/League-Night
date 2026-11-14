@@ -1,7 +1,8 @@
 /** Shared top-down drawing: terrain, markers, tee, trees, basket, minimap. */
 import type { HoleDef } from '../game/hole';
 import type { Terrain } from '../sim/terrain';
-import { type Camera, FieldRenderer, worldToScreen } from './field';
+import { config } from '../config';
+import { type Camera, FieldRenderer, screenToWorld, worldToScreen } from './field';
 import { drawTextShadow } from './font';
 import { PAL } from './palette';
 import { drawBasket, drawTeePad, drawTree } from './sprites';
@@ -23,26 +24,43 @@ export class HoleRenderer {
   drawWorld(ctx: CanvasRenderingContext2D, cam: Camera, time: number, opts: { flash: number; top: number; bottom: number }) {
     this.field.draw(ctx, cam, time);
     const h = this.hole;
+    let lastLabel = Infinity;
     for (const m of h.markers) {
       const l = worldToScreen(cam, h.tee.x - 50, h.tee.y + m);
       const r = worldToScreen(cam, h.tee.x + 50, h.tee.y + m);
-      if (l.y < opts.top || l.y > opts.bottom) continue;
+      if (l.y < opts.top || l.y > opts.bottom || l.s < 0.3) continue;
       ctx.fillStyle = 'rgba(244,233,205,0.28)';
-      for (let x = Math.round(l.x); x < r.x; x += 3) ctx.fillRect(x, Math.round(l.y), 1, 1);
-      drawTextShadow(ctx, String(m), Math.round(l.x) - 3, Math.round(l.y) - 2, PAL.inkDim, PAL.night0, 'right');
+      const step = Math.max(2, Math.round(3 * l.s));
+      for (let x = Math.round(l.x); x < r.x; x += step) ctx.fillRect(x, Math.round(l.y + ((x - l.x) / Math.max(1, r.x - l.x)) * (r.y - l.y)), 1, 1);
+      // Far markers bunch up under perspective: only label ones with room.
+      if (lastLabel - l.y >= 8) {
+        drawTextShadow(ctx, String(m), Math.round(l.x) - 3, Math.round(l.y) - 2, PAL.inkDim, PAL.night0, 'right');
+        lastLabel = l.y;
+      }
     }
-    const tee = worldToScreen(cam, h.tee.x, h.tee.y);
-    drawTeePad(ctx, tee.x, tee.y, cam.zoom);
+    const t = h.tee;
+    drawTeePad(ctx, [
+      worldToScreen(cam, t.x - 3, t.y + 5),
+      worldToScreen(cam, t.x + 3, t.y + 5),
+      worldToScreen(cam, t.x + 3, t.y - 6),
+      worldToScreen(cam, t.x - 3, t.y - 6),
+    ]);
 
+    const flatten = Math.sin(cam.pitch);
     const props: { y: number; draw: () => void }[] = [];
-    for (const t of this.terrain.trees) {
-      const s = worldToScreen(cam, t.x, t.y);
-      const r = t.r * cam.zoom;
-      if (s.y < -r - 4 || s.y > 330 + r || s.x < -r - 4 || s.x > 184 + r) continue;
-      props.push({ y: s.y, draw: () => drawTree(ctx, s.x, s.y, r) });
+    for (const tr of this.terrain.trees) {
+      const s = worldToScreen(cam, tr.x, tr.y);
+      const r = tr.r * cam.zoom * s.s;
+      // Trees are drawn taller than their collision height so they read as standing.
+      const top = worldToScreen(cam, tr.x, tr.y, (tr.h ?? config.treeHeight) * 1.5);
+      const hPx = s.y - top.y;
+      if (s.s < 0.08 || s.y < -4 || top.y > 330 || s.x < -r * 2 - 8 || s.x > 188 + r * 2) continue;
+      const kind = treeKind(tr.x, tr.y);
+      props.push({ y: s.y, draw: () => drawTree(ctx, s.x, s.y, r, hPx, kind, flatten) });
     }
     const b = worldToScreen(cam, h.basket.x, h.basket.y);
-    props.push({ y: b.y, draw: () => drawBasket(ctx, b.x, b.y, opts.flash) });
+    const sc = cam.zoom * b.s > 1.1 ? 2 : 1;
+    props.push({ y: b.y, draw: () => drawBasket(ctx, b.x, b.y, opts.flash, sc) });
     props.sort((a, c) => a.y - c.y).forEach((p) => p.draw());
   }
 
@@ -64,16 +82,25 @@ export class HoleRenderer {
     ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
     ctx.drawImage(this.mini, x, y);
     const to = (px: number, py: number) => ({ x: x + (px - box.x0) * scale, y: y + h - (py - box.y0) * scale });
-    // Current view rectangle.
-    const v0 = to(view.x + (0 - view.ax) / view.zoom, view.y - (40 - view.ay) / view.zoom);
-    const v1 = to(view.x + (180 - view.ax) / view.zoom, view.y - (270 - view.ay) / view.zoom);
-    ctx.strokeStyle = 'rgba(244,233,205,0.6)';
-    ctx.lineWidth = 1;
-    const rx = Math.max(x, Math.round(v0.x)) + 0.5;
-    const ry = Math.max(y, Math.round(v0.y)) + 0.5;
-    const rw = Math.min(x + w, Math.round(v1.x)) - rx;
-    const rh = Math.min(y + h, Math.round(v1.y)) - ry;
-    if (rw > 1 && rh > 1) ctx.strokeRect(rx, ry, rw, rh);
+    // Current view: a trapezoid on the ground under perspective.
+    const corners = [
+      screenToWorld(view, 0, 40),
+      screenToWorld(view, 180, 40),
+      screenToWorld(view, 180, 270),
+      screenToWorld(view, 0, 270),
+    ].map((p) => to(p.x, p.y));
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+    ctx.clip();
+    ctx.fillStyle = 'rgba(244,233,205,0.6)';
+    for (let i = 0; i < 4; i++) {
+      const a = corners[i];
+      const c = corners[(i + 1) % 4];
+      const n = Math.min(200, Math.ceil(Math.max(Math.abs(c.x - a.x), Math.abs(c.y - a.y))));
+      for (let j = 0; j <= n; j++) ctx.fillRect(Math.round(a.x + ((c.x - a.x) * j) / Math.max(1, n)), Math.round(a.y + ((c.y - a.y) * j) / Math.max(1, n)), 1, 1);
+    }
+    ctx.restore();
     const t = to(this.hole.tee.x, this.hole.tee.y);
     ctx.fillStyle = PAL.haze;
     ctx.fillRect(Math.round(t.x) - 1, Math.round(t.y) - 1, 2, 2);
@@ -127,4 +154,10 @@ export class HoleRenderer {
     g.putImageData(img, 0, 0);
     return c;
   }
+}
+
+/** Stable per-tree look: mostly pines, some round leafy trees. */
+function treeKind(x: number, y: number): number {
+  const h = Math.imul(Math.round(x * 7) ^ Math.imul(Math.round(y * 13), 2654435761), 1597334677) >>> 0;
+  return h % 3 === 0 ? 1 : 0;
 }

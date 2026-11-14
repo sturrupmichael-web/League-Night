@@ -16,7 +16,7 @@ import { VIEW_H, VIEW_W } from '../core/screen';
 import type { HoleDef } from '../game/hole';
 import { applyThrow, formatToPar, type HoleState, isHoleOver, newHole, SCORE_LABEL, scoreKey } from '../game/rules';
 import type { HoleRecord, ThrowLog } from '../game/round';
-import { type Camera, worldToScreen } from '../render/field';
+import { type Camera, screenToWorld, worldToScreen } from '../render/field';
 import { drawText, drawTextShadow } from '../render/font';
 import { PAL } from '../render/palette';
 import { drawPuttScene, PuttProjector } from '../render/puttView';
@@ -46,9 +46,9 @@ const PRACTICE_WINDS: { label: string; range: [number, number] }[] = [
   { label: 'GUSTY', range: [10, 18] },
 ];
 
-const AIM_ZOOM = 0.55;
-const FLIGHT_ZOOM = 0.7;
-const DISC_ANCHOR_Y = 200;
+const AIM_ZOOM = 0.85;
+const FLIGHT_ZOOM = 0.95;
+const DISC_ANCHOR_Y = 215;
 const HUD_H = 24;
 const TRAY_Y = 270;
 
@@ -440,7 +440,7 @@ export class HoleScene implements Scene {
         break;
       }
       case 'pan':
-        this.rig.panBy(p.x - g.last.x, p.y - g.last.y);
+        this.rig.panBy(g.last, p);
         g.last = { x: p.x, y: p.y };
         break;
       case 'swipe':
@@ -515,12 +515,21 @@ export class HoleScene implements Scene {
   private inputFromPull(pull: Vec2): ThrowInput {
     return {
       origin: { ...this.state.lie },
-      aim: angleFromDir(pull.x, -pull.y), // screen y points down, world y points up-field
+      aim: this.aimFromPull(pull),
       power: this.powerFromPull(pull),
       release: RELEASES[this.releaseIdx].v,
       style: this.style,
       hand: this.hand,
     };
+  }
+
+  /** The pull is in screen pixels; turn it into a world aim through the tilted camera. */
+  private aimFromPull(pull: Vec2): number {
+    const len = Math.hypot(pull.x, pull.y) || 1;
+    const d = this.discScreen();
+    const a = screenToWorld(this.rig.cam, d.x, d.y);
+    const b = screenToWorld(this.rig.cam, d.x + (pull.x / len) * 24, d.y + (pull.y / len) * 24);
+    return angleFromDir(b.x - a.x, b.y - a.y);
   }
 
   private env() {
@@ -748,15 +757,10 @@ export class HoleScene implements Scene {
     const c = this.rig.cam;
     const cam: Camera = { ...c, x: Math.round(c.x * c.zoom) / c.zoom, y: Math.round(c.y * c.zoom) / c.zoom };
     this.view.drawWorld(ctx, cam, this.time, { flash: this.flash, top: HUD_H, bottom: TRAY_Y });
-    const altScale = 0.5 * cam.zoom; // oblique: altitude drawn as an upward offset
 
     if (this.current && (this.mode === 'flight' || this.mode === 'rest')) {
-      ctx.fillStyle = 'rgba(244,233,205,0.35)';
-      for (const q of this.current.path) {
-        if (q.t > this.playT) break;
-        const s = worldToScreen(cam, q.x, q.y);
-        ctx.fillRect(Math.round(s.x), Math.round(s.y - (q.z - this.terrain.height(q.x, q.y)) * altScale), 1, 1);
-      }
+      const shown = this.current.path.filter((q) => q.t <= this.playT);
+      this.drawArc(ctx, cam, shown, 1, 'rgba(10,8,14,0.35)', 'rgba(244,233,205,0.5)');
       const g = this.current.ground;
       if (this.mode === 'rest' && g.penalty) {
         const d = worldToScreen(cam, g.lie.x, g.lie.y);
@@ -769,9 +773,10 @@ export class HoleScene implements Scene {
     const p = this.discPosNow();
     const ds = worldToScreen(cam, p.x, p.y);
     const alt = Math.max(0, p.z - this.terrain.height(p.x, p.y));
+    const da = worldToScreen(cam, p.x, p.y, alt);
     const wet = this.mode === 'rest' && this.current?.ground.kind === 'water';
     const holedNow = this.mode === 'rest' && this.state.holed;
-    if (!holedNow && (!wet || Math.floor(this.time * 6) % 2 === 0)) drawDisc(ctx, ds.x, ds.y, alt * altScale, this.disc.color, 1 + alt / 25);
+    if (!holedNow && (!wet || Math.floor(this.time * 6) % 2 === 0)) drawDisc(ctx, ds.x, ds.y, ds.y - da.y, this.disc.color, 1 + alt / 25 + (ds.s - 1), da.x);
 
     if (this.mode === 'aim' && !this.gesture) {
       const r = 6 + Math.sin(this.time * (this.inGimme() ? 8 : 4)) * 1.5;
@@ -825,13 +830,21 @@ export class HoleScene implements Scene {
     ctx.fillStyle = PAL.ink;
     const aimLen = 28 + power * 20;
     for (let i = 4; i < aimLen; i += 3) ctx.fillRect(Math.round(d.x + ux * i), Math.round(d.y + uy * i), 1, 1);
-    const altScale = 0.5 * cam.zoom;
-    ctx.fillStyle = 'rgba(242,181,68,0.55)';
-    for (let i = 0; i < this.preview.length; i += 3) {
-      const q = this.preview[i];
-      const s = worldToScreen(cam, q.x, q.y);
-      ctx.fillRect(Math.round(s.x), Math.round(s.y - (q.z - this.terrain.height(q.x, q.y)) * altScale), 1, 1);
+    this.drawArc(ctx, cam, this.preview, 3, 'rgba(10,8,14,0.3)', 'rgba(242,181,68,0.6)');
+  }
+
+  /** A flight path: its shadow on the ground, then the disc's line through the air. */
+  private drawArc(ctx: CanvasRenderingContext2D, cam: Camera, path: PathPoint[], every: number, shadow: string, air: string) {
+    const pts = [];
+    for (let i = 0; i < path.length; i += every) {
+      const q = path[i];
+      const alt = Math.max(0, q.z - this.terrain.height(q.x, q.y));
+      pts.push({ g: worldToScreen(cam, q.x, q.y), a: worldToScreen(cam, q.x, q.y, alt) });
     }
+    ctx.fillStyle = shadow;
+    for (const p of pts) ctx.fillRect(Math.round(p.g.x), Math.round(p.g.y), 1, 1);
+    ctx.fillStyle = air;
+    for (const p of pts) ctx.fillRect(Math.round(p.a.x), Math.round(p.a.y), 1, 1);
   }
 
   private drawPowerMeter(ctx: CanvasRenderingContext2D, pull: Vec2) {
