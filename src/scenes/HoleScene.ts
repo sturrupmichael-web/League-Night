@@ -111,6 +111,10 @@ export interface HoleSceneOpts {
   doneInfo?: (strokes: number) => string[];
   /** Small tag shown under the hole name in the intro (mode name). */
   introTag?: string;
+  /** Called after every throw, putt and tap-in with where the next throw comes from (friend matches upload it). */
+  onLog?: (log: ThrowLog, lie: Vec2) => void;
+  /** Throws already played on this hole (a friend-match hole resumed after closing the app). */
+  resume?: { log: ThrowLog; lie: Vec2 }[];
 }
 
 type Gesture =
@@ -181,6 +185,7 @@ export class HoleScene implements Scene {
       this.snapRigToGoal();
     }
     this.lastPutterIdx = DISCS.findIndex((d) => d.type === 'putter');
+    if (opts.resume?.length) this.restore(opts.resume);
     this.buttons = this.makeTray();
     this.doneButtons = [
       {
@@ -308,7 +313,23 @@ export class HoleScene implements Scene {
   }
 
   private log(l: Omit<ThrowLog, 'n' | 'discId' | 'discType'>) {
-    this.logs.push({ ...l, n: this.state.throws, discId: this.disc.id, discType: this.disc.type });
+    const entry: ThrowLog = { ...l, n: this.state.throws, discId: this.disc.id, discType: this.disc.type };
+    this.logs.push(entry);
+    this.opts.onLog?.(entry, { ...this.state.lie });
+  }
+
+  /** Pick a hole back up from throws already played (and uploaded). */
+  private restore(done: { log: ThrowLog; lie: Vec2 }[]) {
+    for (const { log, lie } of done) {
+      if (log.kind !== 'gimme') this.throwNo++; // keeps the seed sequence in step
+      this.state = applyThrow(this.state, this.cfg, { penalty: log.penalty, holed: log.made, lie: { ...lie } });
+      this.logs.push(log);
+    }
+    if (isHoleOver(this.state)) this.mode = 'done';
+    else {
+      const d = this.distToBasket();
+      if (d <= this.cfg.puttRangeFt && d > this.cfg.gimmeFt) this.discIdx = this.lastPutterIdx;
+    }
   }
 
   private hintsOn() {

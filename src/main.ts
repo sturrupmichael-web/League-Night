@@ -50,6 +50,7 @@ function boot() {
     back.style.cssText = 'position:fixed;top:4px;right:4px;z-index:30;font:700 11px ui-monospace,monospace;background:#352b45;color:#f2b544;border:1px solid #5b4a6e;padding:4px 6px;text-decoration:none';
     document.body.appendChild(back);
   } else if (params.has('practice')) app.practice();
+  else if (params.get('join')) app.friends.join(params.get('join')!.slice(0, 6));
   else if (params.has('hole')) {
     const n = Math.min(app.course.holes.length, Math.max(1, Number(params.get('hole')) || 1));
     app.startSingleHole(n - 1, Number(params.get('seed')) || 5);

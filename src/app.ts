@@ -42,6 +42,7 @@ import { Bullseye } from './scenes/turn/Bullseye';
 import { LostAndFound } from './scenes/turn/LostAndFound';
 import { SkipContest } from './scenes/turn/SkipContest';
 import { drawBigText, drawLanterns, type MenuItem, MenuScene } from './ui/menu';
+import { Friends } from './friends';
 
 const DISCS = discsJson as Disc[];
 
@@ -75,12 +76,35 @@ export class App {
   private ephemeral: RoundState | null = null;
   /** Rival holes for the hole being played, keyed by rival id. */
   private rivalHoles: Record<string, AiHole> = {};
+  readonly friends: Friends;
 
   constructor(
     private game: Game,
     private hooks: AppHooks = {},
   ) {
     sfx.enabled = this.save.settings.sfx;
+    this.friends = new Friends({
+      game,
+      course: this.course,
+      meta: () => ({ name: this.chaser.name, chaserId: this.chaser.id, hand: this.save.settings.hand }),
+      dyeColor: () => this.dyeColor,
+      hints: () => this.save.settings.hints,
+      onThrow: hooks.onThrow,
+      title: () => this.title(),
+      chasers: (back) => this.chasers(back),
+      toggles: () => this.toggles(),
+      payMatch: (id, won, finished) => this.payFriendMatch(id, won, finished),
+    });
+  }
+
+  /** Cred for a friend match, paid once: 15 for finishing the card, 25 more for winning. */
+  private payFriendMatch(id: string, won: boolean, finished: boolean): number {
+    if (this.save.friendPaid.includes(id)) return 0;
+    const cred = (finished ? 15 : 0) + (won ? 25 : 0);
+    this.save.friendPaid.push(id);
+    this.save.cred += cred;
+    this.persist();
+    return cred;
   }
 
   private persist() {
@@ -109,7 +133,7 @@ export class App {
       { caption: 'YOU AND THE COURSE', value: 'NEW ROUND', onTap: () => this.newRoundFlow() },
       { caption: 'SEASON FINALE VS THE FIELD', value: 'THE LANTERN CUP', onTap: () => this.setupCup() },
       { caption: 'HEAD TO HEAD FOR SKINS', value: 'SKINS', onTap: () => this.setupSkins() },
-      { caption: 'ONLINE · COMING SOON', value: 'PLAY A FRIEND', onTap: () => {}, enabled: () => false },
+      { caption: () => (this.friends.yourTurn ? `YOUR TURN IN ${this.friends.yourTurn} MATCH${this.friends.yourTurn > 1 ? 'ES' : ''}` : 'ONLINE · SAME COURSE'), value: 'PLAY A FRIEND', onTap: () => this.friends.menu() },
       { caption: 'NO SCORE', value: 'PRACTICE FIELD', onTap: () => this.practice() },
     );
     const small = (x: number, y: number, caption: string, value: string, onTap: () => void): MenuItem => ({ caption, value, onTap, box: { x, y, w: 56, h: 20 } });

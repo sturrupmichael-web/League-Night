@@ -35,6 +35,8 @@ export interface SaveData {
   chaserProgress: Record<string, { rounds: number; wins: number }>;
   cupsWon: number;
   skinsMatchesWon: number;
+  /** Friend matches already paid out in Cred (match ids). */
+  friendPaid: string[];
 }
 
 export const defaultSave = (): SaveData => ({
@@ -53,6 +55,7 @@ export const defaultSave = (): SaveData => ({
   chaserProgress: {},
   cupsWon: 0,
   skinsMatchesWon: 0,
+  friendPaid: [],
 });
 
 /** Bring an older or partial save up to the current shape. Unknown junk gives a fresh save. */
@@ -72,6 +75,7 @@ export function migrate(raw: unknown): SaveData {
     outfits: { ...(r.outfits ?? {}) },
     chaserProgress: { ...(r.chaserProgress ?? {}) },
     pins: arr(r.pins),
+    friendPaid: arr(r.friendPaid).slice(-200),
     trophies: arr(r.trophies),
     cred: typeof r.cred === 'number' && isFinite(r.cred) ? r.cred : 0,
     round: r.round && Array.isArray(r.round.card) && Array.isArray(r.round.order) ? r.round : null,
