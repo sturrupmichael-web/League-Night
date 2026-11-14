@@ -27,9 +27,13 @@ export interface HoleJson {
   markers?: number[];
 }
 
+export type CourseTheme = 'park' | 'lake' | 'desert';
+
 export interface CourseJson {
   id: string;
   name: string;
+  /** Look of the course: colours and kinds of trees (default park). */
+  theme?: CourseTheme;
   holes: HoleJson[];
 }
 
@@ -46,6 +50,8 @@ export interface HoleDef {
   terrain: TerrainSpec;
   /** Bounding box of the playable area (bounds polygon). */
   box: { x0: number; y0: number; x1: number; y1: number };
+  /** The course's look (set by parseCourse). */
+  theme: CourseTheme;
 }
 
 export interface CourseDef {
@@ -53,6 +59,7 @@ export interface CourseDef {
   name: string;
   holes: HoleDef[];
   par: number;
+  theme: CourseTheme;
 }
 
 /** Layer order: later layers win where they overlap. */
@@ -125,11 +132,13 @@ export function parseHole(j: HoleJson): HoleDef {
     markers: j.markers ?? [],
     terrain,
     box,
+    theme: 'park',
   };
 }
 
 export function parseCourse(j: CourseJson): CourseDef {
   if (!j.id || !j.name || !Array.isArray(j.holes) || j.holes.length === 0) throw new Error('course needs id, name and at least one hole');
-  const holes = j.holes.map(parseHole);
-  return { id: j.id, name: j.name, holes, par: holes.reduce((a, h) => a + h.par, 0) };
+  const theme = j.theme ?? 'park';
+  const holes = j.holes.map((h) => ({ ...parseHole(h), theme }));
+  return { id: j.id, name: j.name, holes, par: holes.reduce((a, h) => a + h.par, 0), theme };
 }

@@ -52,8 +52,8 @@ function boot() {
   } else if (params.has('practice')) app.practice();
   else if (params.get('join')) app.friends.join(params.get('join')!.slice(0, 6));
   else if (params.has('hole')) {
-    const n = Math.min(app.course.holes.length, Math.max(1, Number(params.get('hole')) || 1));
-    app.startSingleHole(n - 1, Number(params.get('seed')) || 5);
+    const n = Math.min(18, Math.max(1, Number(params.get('hole')) || 1));
+    app.startSingleHole(n - 1, Number(params.get('seed')) || 5, params.get('course') ?? undefined);
   } else app.title();
 
   startLoop(

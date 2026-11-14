@@ -23,7 +23,9 @@ const SURF: Surface[] = ['fairway', 'rough', 'green', 'sand', 'water', 'ob'];
 
 const hex = (h: string): [number, number, number] => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 
-const C = {
+type Palette = Record<'fairA' | 'fairB' | 'rough' | 'roughDot' | 'green' | 'greenB' | 'sand' | 'sandDot' | 'water' | 'waterLight' | 'ob' | 'obHatch' | 'edge', [number, number, number]>;
+
+const PARK: Palette = {
   fairA: hex(PAL.grass),
   fairB: hex(PAL.grassLight),
   rough: hex(PAL.rough),
@@ -39,7 +41,27 @@ const C = {
   edge: hex(PAL.white),
 };
 
+/** Per-course looks: the northwoods are darker and cooler, the desert is hardpan and scrub. */
+export const THEME_PALETTES: Record<string, Palette> = {
+  park: PARK,
+  lake: { ...PARK, fairA: [40, 78, 58], fairB: [52, 96, 68], rough: [30, 58, 44], roughDot: [22, 44, 34], green: [64, 112, 80], greenB: [52, 98, 70], water: [36, 82, 122] },
+  desert: {
+    ...PARK,
+    fairA: [176, 132, 86],
+    fairB: [164, 122, 78],
+    rough: [138, 100, 70],
+    roughDot: [112, 80, 56],
+    green: [122, 138, 82],
+    greenB: [108, 124, 72],
+    sand: [222, 190, 128],
+    sandDot: [196, 160, 102],
+    ob: [84, 46, 40],
+    obHatch: [58, 32, 30],
+  },
+};
+
 export class FieldRenderer {
+  private C: Palette;
   private surf: Uint8Array;
   private height: Float32Array;
   private gw: number;
@@ -55,7 +77,9 @@ export class FieldRenderer {
     private cell = 2,
     viewW = 180,
     viewH = 320,
+    theme = 'park',
   ) {
+    this.C = THEME_PALETTES[theme] ?? PARK;
     this.gw = Math.ceil((x1 - x0) / cell);
     this.gh = Math.ceil((y1 - y0) / cell);
     this.surf = new Uint8Array(this.gw * this.gh);
@@ -100,7 +124,7 @@ export class FieldRenderer {
       this.stripeRow = new Uint8Array(H + 1);
       this.checkRow = new Uint8Array(H + 1);
     }
-    const { colI, rowJ, gw, gh, surf, height } = this;
+    const { colI, rowJ, gw, gh, surf, height, C } = this;
     // colI[sx] = cell column of pixel sx (or -1); rowJ[r] = cell row of pixel row r-1 (rowJ[0] = the row above the screen).
     for (let sx = 0; sx <= W; sx++) {
       const wx = cam.x + (sx + 0.5 - cam.ax) * inv;

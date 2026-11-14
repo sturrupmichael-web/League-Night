@@ -31,7 +31,10 @@ const USED_KEY = 'leaguenight.friends';
 
 export interface FriendHost {
   game: Game;
-  course: CourseDef;
+  courses: CourseDef[];
+  /** The course picker row from the setup screens, and the course it has selected. */
+  courseItem(back?: () => void): MenuItem;
+  selectedCourse(): CourseDef;
   meta(): PlayerMeta;
   dyeColor(): string | null;
   hints(): boolean;
@@ -202,9 +205,11 @@ export class Friends {
   private setupHost() {
     this.game.set(
       new MenuScene({
-        top: 92,
+        top: 84,
+        gap: 25,
         items: [
-          { caption: () => (LENGTHS[this.lengthIdx] === 3 ? 'QUICK ONE' : LENGTHS[this.lengthIdx] === 9 ? 'THE FULL COURSE' : 'TWICE AROUND'), value: () => `< ${LENGTHS[this.lengthIdx]} HOLES >`, onTap: () => (this.lengthIdx = (this.lengthIdx + 1) % LENGTHS.length) },
+          this.host.courseItem(),
+          { caption: () => (LENGTHS[this.lengthIdx] === 3 ? 'QUICK ONE' : LENGTHS[this.lengthIdx] === 9 ? 'THE FRONT NINE' : 'THE FULL COURSE'), value: () => `< ${LENGTHS[this.lengthIdx]} HOLES >`, onTap: () => (this.lengthIdx = (this.lengthIdx + 1) % LENGTHS.length) },
           {
             caption: () => (this.playAhead ? 'PLAY YOUR WHOLE CARD ANY TIME' : 'AT MOST ONE HOLE AHEAD'),
             value: () => (this.playAhead ? 'PLAY AHEAD: ON' : 'PLAY AHEAD: OFF'),
@@ -226,9 +231,8 @@ export class Friends {
         draw: (ctx, t) => {
           drawLanterns(ctx, t);
           drawBigText(ctx, 'HOST A MATCH', VIEW_W / 2, 36, PAL.amber);
-          drawText(ctx, this.host.course.name, VIEW_W / 2, 58, PAL.ink, 'center');
-          drawText(ctx, 'LOWEST CARD WINS', VIEW_W / 2, 70, PAL.haze, 'center');
-          if (this.status) drawText(ctx, this.status, VIEW_W / 2, 256, PAL.red, 'center');
+          drawText(ctx, 'LOWEST CARD WINS', VIEW_W / 2, 58, PAL.haze, 'center');
+          if (this.status) drawText(ctx, this.status, VIEW_W / 2, 70, PAL.red, 'center');
         },
       }),
     );
@@ -238,7 +242,7 @@ export class Friends {
     this.status = 'CREATING...';
     try {
       const net = await this.connect();
-      const settings: MatchSettings = { courseId: this.host.course.id, length: LENGTHS[this.lengthIdx], playAhead: this.playAhead, pacing: this.pacing };
+      const settings: MatchSettings = { courseId: this.host.selectedCourse().id, length: LENGTHS[this.lengthIdx], playAhead: this.playAhead, pacing: this.pacing };
       const m = await net.createMatch(settings, this.host.meta(), newSeed());
       this.status = '';
       await this.open(m.id);
@@ -327,8 +331,9 @@ export class Friends {
   }
 
   private holeFor(m: Match, idx: number): HoleDef {
-    const order = holeOrder(this.host.course.holes.length, m.settings.length);
-    return this.host.course.holes[order[idx]];
+    const course = this.host.courses.find((c) => c.id === m.settings.courseId) ?? this.host.courses[0];
+    const order = holeOrder(course.holes.length, m.settings.length);
+    return course.holes[order[idx]];
   }
 
   async open(id: string) {

@@ -3,7 +3,7 @@
  * results and the meta screens. Owns the save file and writes it after every hole.
  */
 import { config } from './config';
-import courseJson from './content/courses/lantern-park.json';
+import { COURSE_BLURB, courseById, COURSES } from './content/courses';
 import discsJson from './content/discs.json';
 import { PRACTICE_HOLE } from './content/practiceField';
 import rivalsJson from './content/rivals.json';
@@ -19,7 +19,7 @@ import { chaserById, chaserConfig, CHASERS, chaptersUnlocked, isChaserUnlocked }
 import { holeWind } from './game/conditions';
 import { credTier, type CredLine, roundCred } from './game/cred';
 import { pickHighlights } from './game/highlights';
-import { type CourseJson, type HoleDef, parseCourse } from './game/hole';
+import type { CourseDef, HoleDef } from './game/hole';
 import {
   currentHoleIndex, type HoleRecord, isRoundOver, newRound, type Pacing, recordHole, recordRivals, type RoundLength, type RoundMode, roundMode,
   type RoundSettings, type RoundState, roundToPar,
@@ -53,8 +53,8 @@ export const RIVALS = rivalsJson as Rival[];
 
 const LENGTHS: { n: RoundLength; label: string; caption: string }[] = [
   { n: 3, label: '3 HOLES', caption: 'QUICK ONE' },
-  { n: 9, label: '9 HOLES', caption: 'THE FULL COURSE' },
-  { n: 18, label: '18 HOLES', caption: 'TWICE AROUND' },
+  { n: 9, label: '9 HOLES', caption: 'THE FRONT NINE' },
+  { n: 18, label: '18 HOLES', caption: 'THE FULL COURSE' },
 ];
 
 const MODE_NAME: Record<RoundMode, string> = { casual: 'NEW ROUND', cup: 'THE LANTERN CUP', skins: 'SKINS' };
@@ -66,7 +66,14 @@ export interface AppHooks {
 }
 
 export class App {
-  readonly course = parseCourse(courseJson as CourseJson);
+  /** The course picked on the setup screens. */
+  private courseIdx = 0;
+  get course(): CourseDef {
+    return COURSES[this.courseIdx];
+  }
+  private courseOf(round: RoundState): CourseDef {
+    return courseById(round.settings.courseId);
+  }
   save: SaveData = loadSave();
   private lengthIdx = 1;
   private cupLengthIdx = 1;
@@ -89,7 +96,9 @@ export class App {
     motion.set(this.save.settings.motion);
     this.friends = new Friends({
       game,
-      course: this.course,
+      courses: COURSES,
+      courseItem: (back) => this.courseItem(back),
+      selectedCourse: () => this.course,
       meta: () => ({ name: this.chaser.name, chaserId: this.chaser.id, hand: this.save.settings.hand }),
       dyeColor: () => this.dyeColor,
       hints: () => this.save.settings.hints,
@@ -225,6 +234,15 @@ export class App {
     };
   }
 
+  /** Cycle through the courses (shown on every setup screen). */
+  private courseItem(_back?: () => void): MenuItem {
+    return {
+      caption: () => `PAR ${this.course.par} · ${(this.course.holes.reduce((a, h) => a + h.lengthFt, 0) / 1000).toFixed(1)}K FT${this.save.pins.includes(this.course.id) ? ' · PIN' : ''}`,
+      value: () => `< ${this.course.name} >`,
+      onTap: () => (this.courseIdx = (this.courseIdx + 1) % COURSES.length),
+    };
+  }
+
   private replacesNote() {
     return !!this.save.round && !isRoundOver(this.save.round) ? 'REPLACES YOUR SAVED ROUND' : '';
   }
@@ -234,16 +252,17 @@ export class App {
       new MenuScene({
         top: 96,
         items: [
+          this.courseItem(),
           { caption: () => LENGTHS[this.lengthIdx].caption, value: () => `< ${LENGTHS[this.lengthIdx].label} >`, onTap: () => (this.lengthIdx = (this.lengthIdx + 1) % LENGTHS.length) },
           this.chaserItem(() => this.setup()),
-          { caption: this.replacesNote() || `${this.course.holes.length} HOLES · PAR ${this.course.par}`, value: 'TEE OFF', onTap: () => this.startRound({ mode: 'casual', length: LENGTHS[this.lengthIdx].n }) },
+          { caption: this.replacesNote() || '3 MULLIGANS', value: 'TEE OFF', onTap: () => this.startRound({ mode: 'casual', length: LENGTHS[this.lengthIdx].n }) },
           { caption: '', value: 'BACK', onTap: () => this.title() },
         ],
         draw: (ctx, t) => {
           drawLanterns(ctx, t);
           drawBigText(ctx, 'NEW ROUND', VIEW_W / 2, 40, PAL.amber);
-          drawText(ctx, this.course.name, VIEW_W / 2, 64, PAL.ink, 'center');
-          drawText(ctx, '3 MULLIGANS · SAVES EVERY HOLE', VIEW_W / 2, 76, PAL.haze, 'center');
+          drawText(ctx, COURSE_BLURB[this.course.id] ?? '', VIEW_W / 2, 64, PAL.ink, 'center');
+          drawText(ctx, 'SAVES EVERY HOLE', VIEW_W / 2, 76, PAL.haze, 'center');
         },
       }),
     );
@@ -252,8 +271,9 @@ export class App {
   private setupCup() {
     this.game.set(
       new MenuScene({
-        top: 120,
+        top: 110,
         items: [
+          this.courseItem(),
           { caption: () => LENGTHS[this.cupLengthIdx].caption, value: () => `< ${LENGTHS[this.cupLengthIdx].label} >`, onTap: () => (this.cupLengthIdx = (this.cupLengthIdx + 1) % LENGTHS.length) },
           this.chaserItem(() => this.setupCup()),
           { caption: this.replacesNote() || 'NO MULLIGANS', value: 'TEE OFF', onTap: () => this.startRound({ mode: 'cup', length: LENGTHS[this.cupLengthIdx].n }) },
@@ -289,6 +309,7 @@ export class App {
             value: () => (this.pacing === 'throw' ? 'THROW BY THROW' : 'HOLE BY HOLE'),
             onTap: () => (this.pacing = this.pacing === 'throw' ? 'hole' : 'throw'),
           },
+          this.courseItem(),
           { caption: () => LENGTHS[this.skinsLengthIdx].caption, value: () => `< ${LENGTHS[this.skinsLengthIdx].label} >`, onTap: () => (this.skinsLengthIdx = (this.skinsLengthIdx + 1) % LENGTHS.length) },
           this.chaserItem(() => this.setupSkins()),
           {
@@ -298,7 +319,7 @@ export class App {
           },
           { caption: '', value: 'BACK', onTap: () => this.title() },
         ],
-        gap: 25,
+        gap: 24,
         draw: (ctx, t) => {
           drawLanterns(ctx, t);
           drawBigText(ctx, 'SKINS', VIEW_W / 2, 36, PAL.amber);
@@ -313,7 +334,7 @@ export class App {
     this.ephemeral = null;
     const seed = (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0;
     const settings: RoundSettings = { courseId: this.course.id, hand: this.save.settings.hand, chaserId: this.chaser.id, ...s };
-    let round = newRound(this.course, settings, seed);
+    let round = newRound(courseById(settings.courseId), settings, seed);
     if (s.mode === 'cup') round = { ...round, rivals: RIVALS.map((r) => ({ id: r.id, name: r.name, scores: [] })) };
     if (s.mode === 'skins') {
       const r = RIVALS.find((x) => x.id === s.rivalId) ?? RIVALS[0];
@@ -332,12 +353,13 @@ export class App {
   }
 
   private holeAt(round: RoundState, idx: number): HoleDef {
-    return this.customHole ?? this.course.holes[round.order[idx]];
+    return this.customHole ?? this.courseOf(round).holes[round.order[idx]];
   }
 
   /** Start a one-off round on a single hole (dev/testing: ?hole=N). */
-  startSingleHole(index: number, seed: number) {
-    const r = newRound(this.course, { courseId: this.course.id, length: 3, hand: this.save.settings.hand, chaserId: this.chaser.id }, seed);
+  startSingleHole(index: number, seed: number, courseId?: string) {
+    const course = courseById(courseId);
+    const r = newRound(course, { courseId: course.id, length: 3, hand: this.save.settings.hand, chaserId: this.chaser.id }, seed);
     this.ephemeral = { ...r, order: [index] };
     this.playHole();
   }
@@ -369,7 +391,7 @@ export class App {
       hole,
       practice: false,
       seed: mixSeed(round.seed, idx),
-      holeNumber: idx + 1,
+      holeNumber: this.ephemeral && !this.customHole && round.order.length === 1 ? hole.id : idx + 1,
       holeCount: round.order.length,
       roundToPar: roundToPar(round),
       hand: round.settings.hand,
@@ -610,7 +632,7 @@ export class App {
     } else {
       night = {
         headline: tp < 0 ? 'UNDER PAR. NICE NIGHT.' : tp === 0 ? 'EVEN PAR. RESPECTABLE.' : 'THERE IS ALWAYS NEXT WEEK.',
-        sub: `${this.course.name} · ${round.order.length} HOLE${round.order.length === 1 ? '' : 'S'} · ${formatToPar(tp)}`,
+        sub: `${this.courseOf(round).name} · ${round.order.length} HOLE${round.order.length === 1 ? '' : 'S'} · ${formatToPar(tp)}`,
         cred,
         unlocks,
       };
@@ -626,7 +648,7 @@ export class App {
       s.chaserProgress[chaser.id] = { rounds: prog.rounds + (round.conceded ? 0 : 1), wins: prog.wins + (won ? 1 : 0) };
       if (full && !round.conceded && !s.pins.includes(round.settings.courseId)) {
         s.pins.push(round.settings.courseId);
-        unlocks.push(`${this.course.name} PIN`);
+        unlocks.push(`${this.courseOf(round).name} PIN`);
       }
       if (mode === 'cup' && won) {
         s.cupsWon++;
@@ -658,7 +680,7 @@ export class App {
       this.game.set(
         new ResultsScene(
           round,
-          this.course,
+          this.courseOf(round),
           {
             again: () => {
               const st = round.settings;

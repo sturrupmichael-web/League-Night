@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import course from '../content/courses/lantern-park.json';
+import { COURSES } from '../content/courses';
 import { PRACTICE_HOLE } from '../content/practiceField';
 import { makeTerrain } from '../sim/terrain';
-import { type CourseJson, type HoleJson, parseCourse, parseHole } from './hole';
+import { type HoleJson, parseHole } from './hole';
 
 const base: HoleJson = {
   id: 9,
@@ -15,9 +15,9 @@ const base: HoleJson = {
 };
 
 describe('hole loader', () => {
-  it('loads the bundled course', () => {
-    const c = parseCourse(course as CourseJson);
-    expect(c.holes.length).toBe(9);
+  it('loads the bundled courses', () => {
+    for (const c of COURSES) {
+    expect(c.holes.length).toBe(18);
     expect(c.par).toBe(c.holes.reduce((a, h) => a + h.par, 0));
     for (const h of c.holes) {
       const t = makeTerrain(h.terrain);
@@ -28,6 +28,7 @@ describe('hole loader', () => {
         expect(Math.hypot(tr.x - h.basket.x, tr.y - h.basket.y), `${h.name} tree on basket`).toBeGreaterThan(tr.r + 8);
       }
       expect(Math.abs(h.lengthFt - Math.hypot(h.basket.x - h.tee.x, h.basket.y - h.tee.y))).toBeLessThan(h.lengthFt * 0.5);
+    }
     }
   });
 

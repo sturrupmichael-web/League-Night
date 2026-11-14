@@ -20,7 +20,9 @@ const hash = (x: number, y: number) => {
   return (h >>> 0) / 4294967296;
 };
 
-function treeSprite(r: number, kind: 'pine' | 'leaf'): HTMLCanvasElement | null {
+type TreeKind = 'pine' | 'leaf' | 'cactus' | 'rock';
+
+function treeSprite(r: number, kind: TreeKind): HTMLCanvasElement | null {
   const R = Math.max(1, Math.round(r));
   const key = `${kind}:${R}`;
   if (treeCache.has(key)) return treeCache.get(key)!;
@@ -33,7 +35,29 @@ function treeSprite(r: number, kind: 'pine' | 'leaf'): HTMLCanvasElement | null 
     const cx = R + 1;
     const cy = R + 1;
     fillCircle(g, cx + R * 0.4, cy + R * 0.4, R, 'rgba(10,8,14,0.45)'); // shadow, down-right
-    if (kind === 'pine') {
+    if (kind === 'cactus') {
+      // Seen from above: a ribbed round cactus with a couple of arms.
+      g.fillStyle = PAL.night0;
+      g.fillRect(cx - R - 1, cy - 1, R * 2 + 3, 3);
+      fillCircle(g, cx, cy, R * 0.62 + 0.7, PAL.night0);
+      fillCircle(g, cx, cy, R * 0.62, '#4f7a3a');
+      g.fillStyle = '#4f7a3a';
+      g.fillRect(cx - R, cy, R * 2 + 1, 1);
+      g.fillStyle = '#7da35a';
+      g.fillRect(cx - 1, cy - Math.round(R * 0.5), 1, Math.max(1, Math.round(R * 0.9)));
+      g.fillRect(cx - R, cy, 1, 1);
+      g.fillRect(cx + R, cy, 1, 1);
+      g.fillStyle = PAL.ink;
+      g.fillRect(cx, cy - 1, 1, 1);
+    } else if (kind === 'rock') {
+      // A red-rock boulder / hoodoo top.
+      fillCircle(g, cx, cy, R + 0.6, PAL.night0);
+      fillCircle(g, cx, cy, R, '#8a4a36');
+      fillCircle(g, cx - R * 0.25, cy - R * 0.3, R * 0.65, '#b0654a');
+      fillCircle(g, cx - R * 0.35, cy - R * 0.4, Math.max(0.6, R * 0.25), '#d08a64');
+      g.fillStyle = '#5e3226';
+      g.fillRect(Math.round(cx + R * 0.1), Math.round(cy + R * 0.2), Math.max(1, Math.round(R * 0.5)), 1);
+    } else if (kind === 'pine') {
       // Outline, body, then a ring of branch tips and a lit side.
       fillCircle(g, cx, cy, R + 0.6, PAL.night0);
       fillCircle(g, cx, cy, R, PAL.pine);
@@ -70,8 +94,9 @@ function treeSprite(r: number, kind: 'pine' | 'leaf'): HTMLCanvasElement | null 
   return c;
 }
 
-export function drawTree(ctx: CanvasRenderingContext2D, sx: number, sy: number, r: number, wx = 0, wy = 0) {
-  const kind = hash(wx, wy) < 0.72 ? 'pine' : 'leaf';
+export function drawTree(ctx: CanvasRenderingContext2D, sx: number, sy: number, r: number, wx = 0, wy = 0, theme = 'park') {
+  const h = hash(wx, wy);
+  const kind: TreeKind = theme === 'desert' ? (h < 0.5 ? 'cactus' : 'rock') : theme === 'lake' ? (h < 0.9 ? 'pine' : 'leaf') : h < 0.72 ? 'pine' : 'leaf';
   const spr = treeSprite(r, kind);
   if (spr) {
     const R = Math.max(1, Math.round(r));

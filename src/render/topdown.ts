@@ -1,7 +1,7 @@
 /** Shared top-down drawing: terrain, markers, tee, trees, basket, minimap. */
 import type { HoleDef } from '../game/hole';
 import type { Terrain } from '../sim/terrain';
-import { type Camera, FieldRenderer, worldToScreen } from './field';
+import { type Camera, FieldRenderer, THEME_PALETTES, worldToScreen } from './field';
 import { drawTextShadow } from './font';
 import { PAL } from './palette';
 import { drawBasket, drawTeePad, drawTree } from './sprites';
@@ -17,7 +17,7 @@ export class HoleRenderer {
   ) {
     const m = 60;
     const b = hole.box;
-    this.field = new FieldRenderer(terrain, b.x0 - m, b.y0 - m, b.x1 + m, b.y1 + m);
+    this.field = new FieldRenderer(terrain, b.x0 - m, b.y0 - m, b.x1 + m, b.y1 + m, 2, 180, 320, hole.theme);
   }
 
   drawWorld(ctx: CanvasRenderingContext2D, cam: Camera, time: number, opts: { flash: number; top: number; bottom: number }) {
@@ -39,7 +39,7 @@ export class HoleRenderer {
       const s = worldToScreen(cam, t.x, t.y);
       const r = t.r * cam.zoom;
       if (s.y < -r - 4 || s.y > 330 + r || s.x < -r - 4 || s.x > 184 + r) continue;
-      props.push({ y: s.y, draw: () => drawTree(ctx, s.x, s.y, r, t.x, t.y) });
+      props.push({ y: s.y, draw: () => drawTree(ctx, s.x, s.y, r, t.x, t.y, this.hole.theme) });
     }
     const b = worldToScreen(cam, h.basket.x, h.basket.y);
     props.push({ y: b.y, draw: () => drawBasket(ctx, b.x, b.y, opts.flash) });
@@ -94,14 +94,8 @@ export class HoleRenderer {
     const g = c.getContext('2d')!;
     const img = g.createImageData(w, h);
     const box = this.hole.box;
-    const col: Record<string, [number, number, number]> = {
-      fairway: [59, 106, 69],
-      rough: [36, 69, 47],
-      green: [71, 122, 79],
-      sand: [201, 168, 106],
-      water: [44, 95, 134],
-      ob: [58, 43, 54],
-    };
+    const P = THEME_PALETTES[this.hole.theme] ?? THEME_PALETTES.park;
+    const col: Record<string, [number, number, number]> = { fairway: P.fairB, rough: P.rough, green: P.green, sand: P.sand, water: P.water, ob: P.ob };
     for (let j = 0; j < h; j++) {
       for (let i = 0; i < w; i++) {
         const wx = box.x0 + (i + 0.5) / scale;

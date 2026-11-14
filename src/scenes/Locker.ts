@@ -73,11 +73,13 @@ export class LockerScene extends MenuScene {
     // Pins and trophies.
     drawText(ctx, 'PINS AND TROPHIES', VIEW_W / 2, 152, PAL.haze, 'center');
     const items: { label: string; got: boolean; cup: boolean }[] = [
-      { label: 'LANTERN PARK PIN', got: s.pins.includes('lantern-park'), cup: false },
-      { label: 'THE LANTERN CUP', got: s.trophies.includes('lantern-cup'), cup: true },
+      { label: 'LANTERN', got: s.pins.includes('lantern-park'), cup: false },
+      { label: 'LOON LAKE', got: s.pins.includes('loon-lake'), cup: false },
+      { label: 'RED MESA', got: s.pins.includes('red-mesa'), cup: false },
+      { label: 'THE CUP', got: s.trophies.includes('lantern-cup'), cup: true },
     ];
     items.forEach((it, i) => {
-      const cx = 52 + i * 76;
+      const cx = 24 + i * 44;
       const cy = 172;
       if (it.cup) {
         ctx.fillStyle = it.got ? PAL.amber : PAL.night3;
