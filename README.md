@@ -12,7 +12,11 @@ npm install
 npm run dev -- --host     # prints a LAN URL you can open on your phone
 npm test                  # Vitest: flight, ground, putting, rules, hole loader
 npm run build             # type-check, then static build into dist/
+npm run build:single      # also writes dist/league-night-single.html (one self-contained file)
 ```
+
+**On a phone without a laptop:** the latest build is published as a private test page in the project
+thread. It opens on a small test menu (holes, practice field, tuning sliders).
 
 Add `?dev=1` to the URL for the tuning panel (tap **DEV** top-left). Slider changes apply to the
 next throw and persist in that browser; **Copy changes** gives you JSON to paste back into
@@ -20,7 +24,8 @@ next throw and persist in that browser; **Copy changes** gives you JSON to paste
 
 ## Playing
 
-Opening the game starts **Lantern Park**, hole 1. Until the title screen arrives in Phase 3, use URL options:
+Opening the game shows a small test menu. Until the title screen arrives in Phase 3, URL options skip it
+(where only a hash can be passed, use `#practice`, `#hole2`, `#dev`):
 
 | URL option | What it does |
 | --- | --- |
