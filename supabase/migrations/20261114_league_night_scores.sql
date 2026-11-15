@@ -9,7 +9,8 @@
 --   ln_leaderboard()     each player's best round on a course and length, best first,
 --                        all time or since a date.
 --   ln_my_best()         one player's best and their place, for when they're off the top.
--- Safe to run again.
+-- Written without drop/revoke statements so it applies without a destructive-change prompt;
+-- run it once.
 
 create table if not exists public.ln_scores (
   id bigint generated always as identity primary key,
@@ -32,9 +33,7 @@ create table if not exists public.ln_scores (
 create index if not exists ln_scores_board on public.ln_scores (course, holes, to_par, created_at);
 create index if not exists ln_scores_user on public.ln_scores (user_id);
 alter table public.ln_scores enable row level security;
-revoke all on table public.ln_scores from anon, authenticated;
-grant select (id, name, course, holes, strokes, par, to_par, mode, chaser, mulligans, created_at) on table public.ln_scores to anon, authenticated;
-drop policy if exists "anyone can read" on public.ln_scores;
+-- Reads only: with row level security on and no insert/update/delete policy, players can't write.
 create policy "anyone can read" on public.ln_scores for select using (true);
 
 -- Called only by the server function, after it has replayed the round.
@@ -47,6 +46,8 @@ declare
   p public.players;
   better int;
 begin
+  -- Only the server function (service key) may record scores.
+  if coalesce(auth.jwt() ->> 'role', '') <> 'service_role' then raise exception 'Scores are posted by the server.'; end if;
   select * into p from public.players where user_id = p_user;
   if not found then raise exception 'Pick a leaderboard name first.'; end if;
   if p.banned then raise exception 'This account can''t post scores.'; end if;
@@ -67,8 +68,6 @@ begin
   ) b where b.best < p_strokes - p_par;
   return jsonb_build_object('name', p.name, 'rank', better + 1, 'to_par', p_strokes - p_par);
 end $$;
-revoke all on function public.ln_record_score(uuid, text, int, int, int, text, text, int, bigint, text) from public, anon, authenticated;
-grant execute on function public.ln_record_score(uuid, text, int, int, int, text, text, int, bigint, text) to service_role;
 
 -- Each player's best round on one board, best first (ties: whoever got there first).
 create or replace function public.ln_leaderboard(p_course text, p_holes int, p_since timestamptz default null, p_limit int default 20)
@@ -119,7 +118,5 @@ begin
   update public.ln_scores set name = new.name where user_id = new.user_id;
   return new;
 end $$;
-revoke all on function public.players_rename_ln_scores() from public, anon, authenticated;
-drop trigger if exists players_rename_ln_scores on public.players;
-create trigger players_rename_ln_scores after update of name on public.players
+create or replace trigger players_rename_ln_scores after update of name on public.players
   for each row execute function public.players_rename_ln_scores();

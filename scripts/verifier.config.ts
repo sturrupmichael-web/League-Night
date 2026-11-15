@@ -7,7 +7,7 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   build: {
-    lib: { entry: 'src/net/verifyRound.ts', formats: ['es'], fileName: () => 'verify.js' },
+    lib: { entry: 'src/net/verifyRound.ts', name: 'LNVerify', formats: ['es', 'iife'], fileName: (f) => (f === 'es' ? 'verify.js' : 'verify.iife.js') },
     outDir: 'supabase/functions/ln-submit-score',
     emptyOutDir: false,
     minify: true,
