@@ -136,6 +136,8 @@ export const DEFAULT_CONFIG = {
   puttPowerWobble: 0.06,
   /** How many feet of the putt's line the aiming guide shows while swiping (0 = no guide). Capped at 60% of the putt. */
   puttGuideFt: 6,
+  /** Taps this soon after the putt view opens are ignored (s): they were meant to skip the flight. */
+  puttTapGuardS: 0.25,
   /** Basket geometry, relative to basket ground (ft). */
   chainHalfWidth: 0.85,
   centerHalfWidth: 0.35,
@@ -213,6 +215,7 @@ export const CONFIG_META: ConfigMeta[] = [
   m('Putting', 'puttWobbleDeg', 0, 6, 0.1),
   m('Putting', 'puttPowerWobble', 0, 0.3, 0.01),
   m('Putting', 'puttGuideFt', 0, 70, 1),
+  m('Putting', 'puttTapGuardS', 0, 1, 0.05),
   m('Putting', 'chainHalfWidth', 0.3, 1.5, 0.05),
   m('Putting', 'spitRatio', 1, 1.5, 0.01),
   m('Putting', 'blowThroughRatio', 1, 2, 0.01),

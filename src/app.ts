@@ -826,6 +826,7 @@ export class App {
         overlay: { title: 'PAUSED', sub: round ? `${MODE_NAME[roundMode(round)]} · HOLE ${currentHoleIndex(round) + 1} OF ${round.order.length}` : 'PRACTICE FIELD' },
         top: 88,
         items,
+        onBack: () => this.game.pop(),
       }),
     );
   }

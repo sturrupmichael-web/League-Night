@@ -26,6 +26,10 @@ export class Game implements InputHandler {
     if (this.stack.length > 1) this.stack.pop();
   }
 
+  keyDown(e: KeyboardEvent) {
+    if (this.top?.keyDown?.(e)) e.preventDefault();
+  }
+
   update(dt: number) {
     this.top?.update(dt);
   }

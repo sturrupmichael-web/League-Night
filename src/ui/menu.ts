@@ -28,6 +28,8 @@ export interface MenuOpts {
   gap?: number;
   /** Draw a dimmed panel over the scene beneath. */
   overlay?: { title: string; sub?: string };
+  /** Escape on a keyboard (pause menus: resume). */
+  onBack?: () => void;
   /** Background / extra drawing, called before the buttons. */
   draw?: (ctx: CanvasRenderingContext2D, time: number) => void;
 }
@@ -56,6 +58,12 @@ export class MenuScene implements Scene {
       enabled: it.enabled,
       primary: it.primary,
     }));
+  }
+
+  keyDown(e: KeyboardEvent) {
+    if (e.key !== 'Escape' || !this.opts.onBack) return false;
+    this.opts.onBack();
+    return true;
   }
 
   down(p: PointerInfo) {

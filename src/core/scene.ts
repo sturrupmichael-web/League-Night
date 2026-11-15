@@ -9,4 +9,6 @@ export interface Scene extends InputHandler {
   overlay?: boolean;
   /** Music for this screen (default: the menu tune). Overlays keep what is playing. */
   music?: Track;
+  /** A key press (desktop). Return true when the scene used it. */
+  keyDown?(e: KeyboardEvent): boolean;
 }

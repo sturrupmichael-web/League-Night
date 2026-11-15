@@ -29,6 +29,11 @@ function boot() {
   const input = new Input(screen);
   const game = new Game();
   input.handler = game;
+  window.addEventListener('keydown', (e) => {
+    if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.target instanceof HTMLElement && e.target.closest('input, textarea, select')) return;
+    game.keyDown(e);
+  });
 
 
   let panel: ReturnType<typeof mountDevPanel> | null = null;

@@ -163,7 +163,12 @@ export class HoleScene implements Scene {
   private rivalLie: Vec2 = { x: 0, y: 0 };
   private rivalAnim: { th: AiThrow; path: PathPoint[]; t: number; end: number } | null = null;
   private gimme: { from: Vec2; t: number } | null = null;
-  private toast: { title: string; sub: string; t: number; bad: boolean } | null = null;
+  /** fromThrow: a full throw's result, which belongs to the top-down view and is not shown over the putt view. */
+  private toast: { title: string; sub: string; t: number; bad: boolean; fromThrow?: boolean } | null = null;
+  /** Seconds in the current aim, so a tap meant to skip a flight that just ended is not read as a putt. */
+  private aimT = 0;
+  /** Where the aim preview says the current pull carries (feet), or null with no pull. */
+  private previewCarry: number | null = null;
   private hint: { text: string; t: number } | null = null;
   private projCache: { key: string; p: PuttProjector } | null = null;
   /** Feel: world-space bursts, putt-view sparks (screen pixels) and screen shake. */
@@ -415,6 +420,40 @@ export class HoleScene implements Scene {
     return worldToScreen(this.rig.cam, this.state.lie.x, this.state.lie.y);
   }
 
+  /** Desktop: Escape pauses; Space or Enter skips what is playing, tees off or goes to the next hole. */
+  keyDown(e: KeyboardEvent): boolean {
+    if (e.key === 'Escape') {
+      if (this.mode === 'done' || !this.opts.onPause) return false;
+      this.gesture = null;
+      this.opts.onPause();
+      return true;
+    }
+    if (e.key !== ' ' && e.key !== 'Enter') return false;
+    switch (this.mode) {
+      case 'intro':
+        this.endIntro();
+        return true;
+      case 'flight':
+        if (this.current) this.playT = this.current.path[this.current.path.length - 1].t;
+        return true;
+      case 'putting':
+        if (this.putt) this.putt.t = this.putt.res.path[this.putt.res.path.length - 1].t;
+        return true;
+      case 'rival':
+        if (this.rivalAnim) this.rivalAnim.t = this.rivalAnim.end;
+        return true;
+      case 'rest':
+        this.finishRest();
+        return true;
+      case 'done':
+        sfx.play('tap');
+        this.doneButtons[0]?.onTap();
+        return true;
+      default:
+        return false;
+    }
+  }
+
   down(p: PointerInfo, all: Map<number, PointerInfo>) {
     if (all.size >= 2) {
       // Second finger: switch to pinch zoom, dropping whatever the first finger was doing.
@@ -471,6 +510,7 @@ export class HoleScene implements Scene {
     if (this.mode !== 'aim') return;
 
     if (this.puttViewVisible()) {
+      if (this.aimT < this.cfg.puttTapGuardS) return; // a late tap from skipping the flight
       if (p.y > HUD_H && p.y < TRAY_Y) this.gesture = { kind: 'swipe', id: p.id, pts: [{ x: p.x, y: p.y, t: performance.now() }] };
       return;
     }
@@ -594,11 +634,13 @@ export class HoleScene implements Scene {
   private updatePreview(pull: Vec2) {
     if (Math.hypot(pull.x, pull.y) < this.cfg.cancelPullPx) {
       this.preview = [];
+      this.previewCarry = null;
       return;
     }
     const input = this.inputFromPull(pull);
     input.power = Math.min(1, input.power); // the preview never shows redline wobble
     const r = simulateThrow(input, this.disc, this.env(), 1, this.cfg);
+    this.previewCarry = Math.round(r.carry);
     const cut = r.flight.landing.t * this.cfg.previewFraction;
     this.preview = r.flight.path.filter((q) => q.t <= cut);
   }
@@ -623,7 +665,7 @@ export class HoleScene implements Scene {
     const red = r.input.power > 1.005 ? ' · REDLINE' : '';
     const sub = g.penalty ? `CARRY ${Math.round(r.carry)} FT${red}` : `${Math.round(r.total)} FT · CARRY ${Math.round(r.carry)}${red}`;
     const ace = g.kind === 'holed' && this.state.throws === 0 && !this.opts.practice;
-    this.toast = { title: ace ? 'ACE!' : REST_TEXT[g.kind], sub, t: 0, bad: g.penalty > 0 };
+    this.toast = { title: ace ? 'ACE!' : REST_TEXT[g.kind], sub, t: 0, bad: g.penalty > 0, fromThrow: true };
     if (g.kind === 'holed') {
       this.flash = 1.2;
       this.fx.burst('chains', this.hole.basket.x, this.hole.basket.y, 3);
@@ -639,6 +681,8 @@ export class HoleScene implements Scene {
   private puttFromSwipe(pts: SwipePoint[]) {
     const read = readSwipe(pts, this.cfg);
     if (read.cancel) {
+      // A plain tap: the on-screen hint already says what to do, so don't repeat it in red.
+      if (read.reason !== 'parked' && read.reason !== 'backward' && this.hintsOn()) return;
       const why = read.reason === 'parked' ? 'THUMB STOPPED · NO PUTT' : read.reason === 'backward' ? 'PULLED BACK · NO PUTT' : 'SWIPE UP AT THE CHAINS';
       this.hint = { text: why, t: 0 };
       return;
@@ -835,6 +879,7 @@ export class HoleScene implements Scene {
     this.shake.update(dt);
     if (this.flash > 0) this.flash -= dt;
     if (this.toast) this.toast.t += dt;
+    this.aimT = this.mode === 'aim' ? this.aimT + dt : 0;
     if (this.hint) {
       this.hint.t += dt;
       if (this.hint.t > 2) this.hint = null;
@@ -932,7 +977,7 @@ export class HoleScene implements Scene {
     ctx.restore();
 
     this.drawHud(ctx);
-    if (this.mode !== 'intro') {
+    if (this.mode !== 'intro' && this.gesture?.kind !== 'sling') {
       const d = this.discPosNow();
       this.view.drawMinimap(ctx, VIEW_W - 3, HUD_H + 4, 30, 46, d, this.rig.cam, Math.floor(this.time * 3) % 3 !== 0);
     }
@@ -1129,6 +1174,11 @@ export class HoleScene implements Scene {
     ctx.fillRect(x - 2, redY, 10, 1);
     drawTextShadow(ctx, `${Math.round(power * 100)}`, x + 3, top + h + 4, power > 1.005 ? PAL.red : PAL.ink, PAL.night0, 'center');
     if (power > 1.005) drawTextShadow(ctx, 'REDLINE', x + 6, top - 9, PAL.red, PAL.night0, 'right');
+    // How far this pull carries (the steady preview; the redline adds distance and wobble).
+    if (this.previewCarry !== null) {
+      drawTextShadow(ctx, `${this.previewCarry}${power > 1.005 ? '+' : ''}`, VIEW_W - 2, top + h + 13, PAL.ink, PAL.night0, 'right');
+      drawTextShadow(ctx, 'FT', VIEW_W - 2, top + h + 21, PAL.inkDim, PAL.night0, 'right');
+    }
   }
 
   private drawHud(ctx: CanvasRenderingContext2D) {
@@ -1148,20 +1198,24 @@ export class HoleScene implements Scene {
       drawText(ctx, `BASKET ${toBasket} FT`, tx, 13, PAL.ink);
     } else {
       const s = this.state;
-      drawText(ctx, `HOLE ${this.opts.holeNumber} · PAR ${this.hole.par}`, tx, 4, PAL.amber);
       const toPar = this.opts.roundToPar + (isHoleOver(s) ? s.strokes - s.par : 0);
+      drawText(ctx, `HOLE ${this.opts.holeNumber} · PAR ${this.hole.par} · ROUND ${formatToPar(toPar)}`, tx, 4, PAL.amber);
       const throwText = isHoleOver(s) ? `${s.strokes} THROWS` : `THROW ${s.strokes + 1}`;
-      drawText(ctx, `${toBasket} FT · ${throwText} · ${formatToPar(toPar)}`, tx, 13, PAL.ink);
+      drawText(ctx, `${toBasket} FT · ${throwText}`, tx, 13, PAL.ink);
     }
 
     // Wind: arrow shape + words, so it never relies on colour.
     const cx = VIEW_W - 12;
     const cy = 12;
-    fillCircle(ctx, cx, cy, 8, PAL.night2);
     const label = windLabel(this.wind);
     if (label === 'CALM') {
-      fillCircle(ctx, cx, cy, 2, PAL.inkDim);
-    } else {
+      // No wind to point at: no dial, just the word.
+      drawText(ctx, 'NO WIND', VIEW_W - 4, 4, PAL.inkDim, 'right');
+      drawText(ctx, 'CALM', VIEW_W - 4, 13, PAL.ink, 'right');
+      return;
+    }
+    fillCircle(ctx, cx, cy, 8, PAL.night2);
+    {
       const dx = Math.sin(this.wind.dir);
       const dy = -Math.cos(this.wind.dir);
       ctx.fillStyle = PAL.ink;
@@ -1173,7 +1227,7 @@ export class HoleScene implements Scene {
       }
     }
     drawText(ctx, label, cx - 12, 4, PAL.ink, 'right');
-    drawText(ctx, label === 'CALM' ? '0 MPH' : `${this.wind.mph} MPH`, cx - 12, 13, PAL.inkDim, 'right');
+    drawText(ctx, `${this.wind.mph} MPH`, cx - 12, 13, PAL.inkDim, 'right');
   }
 
   private drawToast(ctx: CanvasRenderingContext2D) {
@@ -1184,15 +1238,17 @@ export class HoleScene implements Scene {
       announce(`${t.title}. ${t.sub}`);
     }
     if (this.mode === 'aim' && t.t > 3) return;
-    const y = HUD_H + 30;
-    panel(ctx, 14, y, VIEW_W - 28, 22, PAL.night1, t.bad ? PAL.red : PAL.amber);
+    if (t.fromThrow && this.puttViewVisible()) return;
+    // Below the minimap (which ends about 50 px under the HUD) and inside the putt meter.
+    const y = HUD_H + 54;
+    panel(ctx, 22, y, VIEW_W - 44, 22, PAL.night1, t.bad ? PAL.red : PAL.amber);
     drawText(ctx, t.title, VIEW_W / 2, y + 4, t.bad ? PAL.red : PAL.amber, 'center');
     drawText(ctx, t.sub, VIEW_W / 2, y + 13, PAL.ink, 'center');
   }
 
   private drawHint(ctx: CanvasRenderingContext2D) {
     if (!this.hint) return;
-    drawTextShadow(ctx, this.hint.text, VIEW_W / 2, TRAY_Y - 60, PAL.red, PAL.night0, 'center');
+    drawTextShadow(ctx, this.hint.text, VIEW_W / 2, TRAY_Y - 60, PAL.amber, PAL.night0, 'center');
   }
 
   private drawTray(ctx: CanvasRenderingContext2D) {

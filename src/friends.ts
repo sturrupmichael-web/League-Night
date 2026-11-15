@@ -668,6 +668,7 @@ export class Friends {
       new MenuScene({
         overlay: { title: 'PAUSED', sub: 'FRIEND MATCH · EVERY THROW IS SAVED' },
         top: 100,
+        onBack: () => this.game.pop(),
         items: [
           { caption: '', value: 'RESUME', onTap: () => this.game.pop(), primary: true },
           ...this.host.toggles(),
