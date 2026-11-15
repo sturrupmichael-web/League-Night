@@ -14,12 +14,13 @@ import type { HoleDef } from '../game/hole';
 import { worldToScreen } from '../render/field';
 import { drawText, drawTextShadow } from '../render/font';
 import { PAL } from '../render/palette';
+import { animatePutt, type PuttAnim, sampleAnim } from '../render/puttAnim';
 import { drawPuttScene, PuttProjector } from '../render/puttView';
 import { drawDisc, panel } from '../render/sprites';
 import { HoleRenderer } from '../render/topdown';
 import type { Disc } from '../sim/discs';
 import { lerp, type PathPoint } from '../sim/math';
-import { type PuttPoint, resolvePutt } from '../sim/putt';
+import { resolvePutt } from '../sim/putt';
 import { makeRng } from '../sim/rng';
 import { makeTerrain } from '../sim/terrain';
 import { simulateThrow } from '../sim/throw';
@@ -38,7 +39,7 @@ export interface Clip {
 
 type Live =
   | { kind: 'throw'; view: HoleRenderer; rig: CameraRig; path: PathPoint[]; end: number; color: string; holed: boolean }
-  | { kind: 'putt'; proj: PuttProjector; path: PuttPoint[]; end: number; made: boolean; color: string };
+  | { kind: 'putt'; proj: PuttProjector; anim: PuttAnim; end: number; made: boolean; color: string; hitDone: boolean };
 
 export class ReplayScene implements Scene {
   readonly music = 'course' as const;
@@ -78,8 +79,10 @@ export class ReplayScene implements Scene {
     } else {
       const proj = new PuttProjector(terrain, rp.lie, c.hole.basket);
       const w = windAt(c.wind ?? CALM, 0, 0, this.cfg.windScale);
-      const res = resolvePutt(rp.read, { distance: proj.distance, rise: proj.rise, crosswind: proj.crosswind(w) }, makeRng(rp.seed), this.cfg);
-      this.live = { kind: 'putt', proj, path: res.path, end: res.path[res.path.length - 1].t, made: res.made, color };
+      const setup = { distance: proj.distance, rise: proj.rise, crosswind: proj.crosswind(w) };
+      const res = resolvePutt(rp.read, setup, makeRng(rp.seed), this.cfg);
+      const anim = animatePutt(res, setup, this.cfg);
+      this.live = { kind: 'putt', proj, anim, end: anim.end, made: res.made, color, hitDone: false };
     }
     sfx.play(rp.t === 'throw' ? 'throw' : 'putt');
   }
@@ -114,7 +117,13 @@ export class ReplayScene implements Scene {
     if (!L) return;
     const prev = this.t;
     this.t += dt;
-    if ((L.kind === 'throw' ? L.holed : L.made) && prev < L.end && this.t >= L.end) sfx.play('chains');
+    if (L.kind === 'throw' && L.holed && prev < L.end && this.t >= L.end) sfx.play('chains');
+    if (L.kind === 'putt' && L.anim.hit && !L.hitDone && this.t >= L.anim.hit.t) {
+      L.hitDone = true;
+      const k = L.anim.hit.kind;
+      if (k === 'chains' || k === 'spit') sfx.play('chains');
+      else if (k === 'tray' || k === 'pole') sfx.play('clank');
+    }
     if (L.kind === 'throw') {
       const p = sample(L.path, Math.min(this.t, L.end));
       L.rig.setFollow({ x: p.x, y: p.y, zoom: 0.7, ay: 160 + Math.round(EXTRA_H / 2) });
@@ -148,8 +157,10 @@ export class ReplayScene implements Scene {
         const alt = Math.max(0, p.z - L.view.terrain.height(p.x, p.y));
         if (!(L.holed && this.t >= L.end)) drawDisc(ctx, s.x, s.y, alt * 0.5 * cam.zoom, L.color, 1 + alt / 25);
       } else {
-        const d = samplePutt(L.path, Math.min(this.t, L.end));
-        drawPuttScene(ctx, L.proj, { bottom: BOTTOM, time: this.time, disc: L.made && this.t >= L.end ? null : d, discColor: L.color, flash: L.made && this.t >= L.end ? 1 : 0, showHandDisc: false });
+        const d = sampleAnim(L.anim.path, this.t);
+        const h = L.anim.hit;
+        const age = h ? this.t - h.t : -1;
+        drawPuttScene(ctx, L.proj, { bottom: BOTTOM, time: this.time, disc: d, discColor: L.color, flash: h?.kind === 'chains' && age >= 0 && age < 1 ? 1 - age : 0, showHandDisc: false, hit: h, hitAge: age });
       }
       ctx.restore();
       // Title card.
@@ -178,19 +189,6 @@ function sample(path: PathPoint[], t: number): PathPoint {
       const b = path[i];
       const f = (t - a.t) / Math.max(1e-6, b.t - a.t);
       return { x: lerp(a.x, b.x, f), y: lerp(a.y, b.y, f), z: lerp(a.z, b.z, f), t };
-    }
-  }
-  return path[path.length - 1];
-}
-
-function samplePutt(path: PuttPoint[], t: number): PuttPoint {
-  if (t <= path[0].t) return path[0];
-  for (let i = 1; i < path.length; i++) {
-    if (path[i].t >= t) {
-      const a = path[i - 1];
-      const b = path[i];
-      const f = (t - a.t) / Math.max(1e-6, b.t - a.t);
-      return { u: lerp(a.u, b.u, f), v: lerp(a.v, b.v, f), h: lerp(a.h, b.h, f), t };
     }
   }
   return path[path.length - 1];
