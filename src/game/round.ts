@@ -30,7 +30,8 @@ export interface RoundSettings {
 /** Enough to re-simulate a throw exactly (highlight replays, later async matches). */
 export type ThrowReplay =
   | { t: 'throw'; input: ThrowInput; seed: number }
-  | { t: 'putt'; lie: Vec2; read: Extract<SwipeRead, { cancel: false }>; seed: number };
+  /** pv: putting physics version (missing = 1, from before versions were recorded). */
+  | { t: 'putt'; lie: Vec2; read: Extract<SwipeRead, { cancel: false }>; seed: number; pv?: number };
 
 /** A rival's running card. */
 export interface RivalCard {

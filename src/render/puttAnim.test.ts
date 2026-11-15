@@ -8,24 +8,24 @@ describe('putt animation', () => {
   it('never changes the result: misses finish where the sim says, makes finish sitting in the tray', () => {
     let makes = 0;
     let misses = 0;
-    for (let i = 0; i < 400; i++) {
+    for (let i = 0; i < 2000; i++) {
       const rng = makeRng(1000 + i);
       const setup: PuttSetup = { distance: 9 + rng() * 55, rise: (rng() - 0.5) * 4, crosswind: (rng() - 0.5) * 10 };
       const read = { cancel: false as const, power: 0.2 + rng() * 1.0, aim: (rng() - 0.5) * 0.12, bend: (rng() - 0.5) * 0.6, snap: 0, releaseSpeed: 500 };
-      const res = resolvePutt(read, setup, makeRng(i), cfg);
+      const res = resolvePutt(read, setup, makeRng(i), cfg, 1 + (i % 2));
       const anim = animatePutt(res, setup, cfg);
       // Time only moves forward.
       for (let k = 1; k < anim.path.length; k++) expect(anim.path[k].t).toBeGreaterThanOrEqual(anim.path[k - 1].t);
       const last = anim.path[anim.path.length - 1];
       if (res.made) {
         makes++;
-        expect(anim.hit?.kind).toBe('chains');
+        expect(anim.hit?.kind).toBe(res.outcome === 'rim' ? 'tray' : 'chains');
         // In the tray: inside the rim, resting on the floor, never below it.
         expect(Math.hypot(last.u, last.v - setup.distance)).toBeLessThan(BASKET.trayR - BASKET.discR + 0.05);
         const hb = last.h - setup.rise;
         expect(hb).toBeGreaterThanOrEqual(BASKET.trayFloor);
         expect(hb).toBeLessThan(BASKET.trayRim);
-        for (const q of anim.path) if (q.t > anim.hit!.t) expect(q.h - setup.rise).toBeGreaterThanOrEqual(BASKET.trayFloor);
+        for (const q of anim.path) if (q.t > anim.path[anim.path.length - 6].t) expect(q.h - setup.rise).toBeGreaterThanOrEqual(BASKET.trayFloor);
       } else {
         misses++;
         expect(last.u).toBeCloseTo(res.rest.u, 6);

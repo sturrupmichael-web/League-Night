@@ -125,6 +125,23 @@ describe('throw verification', () => {
     expect(verifyHole(score, hole, terrain, 99, 1, cfg).issues.join()).toMatch(/card says 1/);
     expect(verifyHole(honest, hole, terrain, 100, 1, cfg).ok).toBe(false);
   });
+
+  it('replays each putt with the physics it was played with, and refuses unknown physics', () => {
+    // Find a hole whose honest play includes a putt.
+    for (const idx of [0, 1, 2, 3, 4, 5, 6, 7, 8]) {
+      const hole = course.holes[idx];
+      const terrain = makeTerrain(hole.terrain);
+      const honest = playHole(idx, 4242);
+      const putts = honest.filter((p) => p.kind === 'putt');
+      if (!putts.length) continue;
+      expect(putts.every((p) => p.replay?.t === 'putt' && p.replay.pv === 2)).toBe(true);
+      const unknown = structuredClone(honest);
+      for (const p of unknown) if (p.replay?.t === 'putt') p.replay.pv = 99;
+      expect(verifyHole(unknown, hole, terrain, 4242, idx, cfg).issues.join()).toMatch(/unknown putting physics/);
+      return;
+    }
+    throw new Error('no putts found');
+  });
 });
 
 describe('friend hole conversions', () => {
