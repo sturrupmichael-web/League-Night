@@ -2,7 +2,7 @@
  * Chiptune sound effects synthesised with Web Audio. No sound files, so nothing to credit.
  * The context starts on the first tap (browsers block audio before that).
  */
-export type SfxName = 'tap' | 'throw' | 'land' | 'tree' | 'chains' | 'splash' | 'skip' | 'putt' | 'good' | 'bad' | 'ob';
+export type SfxName = 'tap' | 'throw' | 'land' | 'tree' | 'chains' | 'clank' | 'splash' | 'skip' | 'putt' | 'good' | 'bad' | 'ob';
 
 export class Sfx {
   private ctx: AudioContext | null = null;
@@ -65,6 +65,12 @@ export class Sfx {
           this.tone('triangle', 2200 + Math.random() * 2600, 1800 + Math.random() * 1500, at, 0.07, 0.07);
         }
         this.hiss(t, 0.4, 6000, 3000, 'highpass', 0.08);
+        break;
+      case 'clank':
+        // Metal tray or pole: a short ring with a dull knock under it.
+        this.tone('square', 520, 470, t, 0.05, 0.12);
+        this.tone('triangle', 1650, 1500, t, 0.18, 0.08);
+        this.tone('sine', 140, 80, t, 0.08, 0.25);
         break;
       case 'splash':
         this.hiss(t, 0.45, 1600, 250, 'lowpass', 0.45);

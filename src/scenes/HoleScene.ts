@@ -21,6 +21,7 @@ import type { HoleRecord, ThrowLog } from '../game/round';
 import { type Camera, worldToScreen } from '../render/field';
 import { drawText, drawTextShadow } from '../render/font';
 import { PAL } from '../render/palette';
+import { animatePutt, type PuttAnim, type PuttHit, sampleAnim } from '../render/puttAnim';
 import { drawPuttScene, PuttProjector } from '../render/puttView';
 import { drawDisc, fillCircle, panel } from '../render/sprites';
 import { HoleRenderer } from '../render/topdown';
@@ -28,7 +29,7 @@ import type { Disc } from '../sim/discs';
 import type { Hand, Style, ThrowInput } from '../sim/flight';
 import type { RestKind } from '../sim/ground';
 import { angleFromDir, clamp, dist, lerp, type PathPoint, type Vec2 } from '../sim/math';
-import { describeMiss, type PuttOutcome, type PuttPoint, type PuttResult, type PuttSetup, previewPutt, puttPowerWindow, readSwipe, resolvePutt, type SwipePoint } from '../sim/putt';
+import { describeMiss, type PuttOutcome, type PuttResult, type PuttSetup, previewPutt, puttPowerWindow, readSwipe, resolvePutt, type SwipePoint } from '../sim/putt';
 import { makeRng, mixSeed } from '../sim/rng';
 import { makeTerrain, type Terrain } from '../sim/terrain';
 import { simulateThrow, type ThrowResult } from '../sim/throw';
@@ -159,7 +160,7 @@ export class HoleScene implements Scene {
   private time = 0;
   private flash = 0;
 
-  private putt: { proj: PuttProjector; res: PuttResult; t: number; done: boolean; read: Extract<SwipeRead, { cancel: false }>; seed: number } | null = null;
+  private putt: { proj: PuttProjector; res: PuttResult; anim: PuttAnim; hitDone: boolean; t: number; done: boolean; read: Extract<SwipeRead, { cancel: false }>; seed: number } | null = null;
   private rivalNext = 0;
   private rivalLie: Vec2 = { x: 0, y: 0 };
   private rivalAnim: { th: AiThrow; path: PathPoint[]; t: number; end: number } | null = null;
@@ -433,7 +434,7 @@ export class HoleScene implements Scene {
         if (this.current) this.playT = this.current.path[this.current.path.length - 1].t;
         return true;
       case 'putting':
-        if (this.putt) this.putt.t = this.putt.res.path[this.putt.res.path.length - 1].t;
+        if (this.putt) this.putt.t = this.putt.anim.end;
         return true;
       case 'rival':
         if (this.rivalAnim) this.rivalAnim.t = this.rivalAnim.end;
@@ -483,7 +484,7 @@ export class HoleScene implements Scene {
       return;
     }
     if (this.mode === 'putting' && this.putt) {
-      this.putt.t = this.putt.res.path[this.putt.res.path.length - 1].t;
+      this.putt.t = this.putt.anim.end;
       return;
     }
     if (this.mode === 'rival' && this.rivalAnim) {
@@ -685,9 +686,10 @@ export class HoleScene implements Scene {
     }
     const proj = this.projector();
     const seed = this.nextSeed();
-    const res = resolvePutt(read, this.puttSetup(proj), makeRng(seed), this.cfg);
+    const setup = this.puttSetup(proj);
+    const res = resolvePutt(read, setup, makeRng(seed), this.cfg);
     this.undo.push({ state: this.state, logs: [...this.logs] });
-    this.putt = { proj, res, t: 0, done: false, read, seed };
+    this.putt = { proj, res, anim: animatePutt(res, setup, this.cfg), hitDone: false, t: 0, done: false, read, seed };
     this.mode = 'putting';
     sfx.play('putt');
     this.toast = null;
@@ -732,18 +734,25 @@ export class HoleScene implements Scene {
     if (penalty) title += surf === 'water' ? ' · SPLASH +1' : ' · OB +1';
     const sub = res.made ? `${Math.round(proj.distance)} FT PUTT` : `${Math.round(dist(lie, this.hole.basket))} FT TO GO`;
     this.toast = { title, sub, t: 0, bad: !res.made };
-    if (res.made) {
-      this.flash = 1.2;
-      const b = proj.project(0, proj.distance, proj.rise + 3.6);
-      if (b) this.fxScreen.burst('chains', b.x, b.y, 0);
-    }
-    sfx.play(res.made ? 'chains' : penalty ? 'splash' : 'land');
+    if (!res.made) sfx.play(penalty ? 'splash' : 'land');
     const from = proj.distance;
     this.state = applyThrow(this.state, this.cfg, { penalty, holed: res.made, lie });
     const pt = this.putt!;
     this.log({ kind: 'putt', fromFt: from, toFt: this.distToBasket(), distanceFt: dist(pt.proj.lie, restW), penalty, made: res.made, surface: surf, replay: { t: 'putt', lie: { ...pt.proj.lie }, read: pt.read, seed: pt.seed } });
     this.mode = 'rest';
     this.restTimer = 0;
+  }
+
+  /** The moment the disc meets the basket: chains ring, or the tray clangs. */
+  private puttHit(proj: PuttProjector, hit: PuttHit) {
+    if (hit.kind === 'chains' || hit.kind === 'spit') {
+      sfx.play('chains');
+      this.flash = hit.kind === 'chains' ? 1.2 : 0.5;
+      const b = proj.project(hit.u, proj.distance - 0.3, proj.rise + hit.h);
+      if (b && hit.kind === 'chains') this.fxScreen.burst('chains', b.x, b.y, 0);
+    } else if (hit.kind === 'tray' || hit.kind === 'pole') {
+      sfx.play('clank');
+    }
   }
 
   private startGimme() {
@@ -916,7 +925,11 @@ export class HoleScene implements Scene {
       case 'putting': {
         const pt = this.putt!;
         pt.t += dt;
-        if (pt.t >= pt.res.path[pt.res.path.length - 1].t + 0.3) this.endPutt();
+        if (!pt.hitDone && pt.anim.hit && pt.t >= pt.anim.hit.t) {
+          pt.hitDone = true;
+          this.puttHit(pt.proj, pt.anim.hit);
+        }
+        if (pt.t >= pt.anim.end + 0.3) this.endPutt();
         break;
       }
       case 'rival': {
@@ -930,6 +943,7 @@ export class HoleScene implements Scene {
         if (this.gimme!.t > 0.5) this.endGimme();
         break;
       case 'rest':
+        if (this.putt) this.putt.t += dt; // let the chains settle
         this.restTimer += dt;
         if (this.restTimer > (isHoleOver(this.state) ? 1.8 : 1.5)) this.finishRest();
         break;
@@ -1053,8 +1067,10 @@ export class HoleScene implements Scene {
 
   private renderPuttView(ctx: CanvasRenderingContext2D) {
     const proj = this.putt?.proj ?? this.projector();
-    const disc: PuttPoint | null = this.putt ? samplePutt(this.putt.res.path, this.putt.t) : null;
-    drawPuttScene(ctx, proj, { bottom: TRAY_Y, time: this.time, disc, discColor: this.discColor, flash: this.flash, showHandDisc: this.mode === 'aim' });
+    const pt = this.putt;
+    const disc = pt ? sampleAnim(pt.anim.path, pt.t) : null;
+    const hit = pt?.anim.hit ?? null;
+    drawPuttScene(ctx, proj, { bottom: TRAY_Y, time: this.time, disc, discColor: this.discColor, flash: this.flash, showHandDisc: this.mode === 'aim', hit, hitAge: hit && pt ? pt.t - hit.t : -1 });
     this.fxScreen.draw(ctx, (x, y) => ({ x, y }), 2);
 
     // Read of the putt: distance, slope, wind.
@@ -1360,19 +1376,6 @@ function samplePath(path: PathPoint[], t: number): PathPoint {
       const b = path[i];
       const f = (t - a.t) / Math.max(1e-6, b.t - a.t);
       return { x: lerp(a.x, b.x, f), y: lerp(a.y, b.y, f), z: lerp(a.z, b.z, f), t };
-    }
-  }
-  return path[path.length - 1];
-}
-
-function samplePutt(path: PuttPoint[], t: number): PuttPoint {
-  if (t <= path[0].t) return path[0];
-  for (let i = 1; i < path.length; i++) {
-    if (path[i].t >= t) {
-      const a = path[i - 1];
-      const b = path[i];
-      const f = (t - a.t) / Math.max(1e-6, b.t - a.t);
-      return { u: lerp(a.u, b.u, f), v: lerp(a.v, b.v, f), h: lerp(a.h, b.h, f), t };
     }
   }
   return path[path.length - 1];
