@@ -226,8 +226,8 @@ export class HoleScene implements Scene {
       {
         x: 3, y: row1, w: 84, h: 20,
         caption: () => this.disc.type.toUpperCase(),
-        value: () => `< ${this.disc.name} >`,
-        onTap: () => this.swapDisc(),
+        value: () => this.disc.name,
+        onTap: () => this.openPicker(),
       },
       {
         x: 89, y: row1, w: 44, h: 20,
@@ -377,9 +377,68 @@ export class HoleScene implements Scene {
     return this.projCache.p;
   }
 
-  private swapDisc() {
-    this.discIdx = (this.discIdx + 1) % DISCS.length;
+  /** The bag picker: tap the disc button, see every disc with its flight numbers, tap one. */
+  private picker = false;
+
+  private openPicker() {
+    if (this.mode !== 'aim' && this.mode !== 'rest' && this.mode !== 'intro') return;
+    this.picker = true;
+    this.gesture = null;
+    this.preview = [];
+  }
+
+  private pickDisc(i: number) {
+    this.discIdx = i;
     if (this.disc.type === 'putter') this.lastPutterIdx = this.discIdx;
+    this.picker = false;
+  }
+
+  /** Picker layout: one row per disc inside a panel over the course. */
+  private pickerRows() {
+    const rowH = 21;
+    const h = 22 + DISCS.length * rowH + 14;
+    const top = Math.max(HUD_H + 2, Math.round((HUD_H + TRAY_Y - h) / 2));
+    return { top, h, rowH, first: top + 20, x: 6, w: VIEW_W - 12 };
+  }
+
+  private drawPicker(ctx: CanvasRenderingContext2D) {
+    const L = this.pickerRows();
+    ctx.fillStyle = 'rgba(13,11,19,0.6)';
+    ctx.fillRect(0, HUD_H, VIEW_W, TRAY_Y - HUD_H);
+    panel(ctx, L.x, L.top, L.w, L.h, PAL.night1, PAL.amber);
+    drawText(ctx, 'PICK A DISC', L.x + 6, L.top + 6, PAL.amber);
+    const cols = [L.x + L.w - 60, L.x + L.w - 44, L.x + L.w - 28, L.x + L.w - 8];
+    ['S', 'G', 'T', 'F'].forEach((h, k) => drawText(ctx, h, cols[k], L.top + 6, PAL.haze, 'right'));
+    const putting = this.puttReady() || this.inGimme();
+    DISCS.forEach((d, i) => {
+      const y = L.first + i * L.rowH;
+      const on = i === this.discIdx;
+      ctx.fillStyle = on ? PAL.night3 : i % 2 ? PAL.night1 : PAL.night2;
+      ctx.fillRect(L.x + 2, y - 2, L.w - 4, L.rowH - 1);
+      if (on) {
+        ctx.fillStyle = PAL.amber;
+        ctx.fillRect(L.x + 2, y - 2, 2, L.rowH - 1);
+      }
+      ctx.fillStyle = PAL.night0;
+      ctx.fillRect(L.x + 7, y, 7, 7);
+      ctx.fillStyle = d.color;
+      ctx.fillRect(L.x + 8, y + 1, 5, 5);
+      drawText(ctx, d.name, L.x + 18, y, on ? PAL.amber : PAL.ink);
+      drawText(ctx, d.type.toUpperCase(), L.x + 18, y + 9, PAL.haze);
+      [d.speed, d.glide, d.turn, d.fade].forEach((n, k) => drawText(ctx, String(n), cols[k], y + 4, PAL.ink, 'right'));
+    });
+    const foot = putting ? 'ON THE GREEN, ONLY A PUTTER PUTTS' : 'S SPEED · G GLIDE · T TURN · F FADE';
+    drawText(ctx, foot, VIEW_W / 2, L.top + L.h - 10, PAL.inkDim, 'center');
+  }
+
+  /** A tap while the picker is open: a disc row picks it, anywhere else closes it. */
+  private pickerTap(p: PointerInfo) {
+    const L = this.pickerRows();
+    const i = Math.floor((p.y - (L.first - 2)) / L.rowH);
+    if (p.x >= L.x && p.x < L.x + L.w && i >= 0 && i < DISCS.length && p.y >= L.first - 2) {
+      sfx.play('tap');
+      this.pickDisc(i);
+    } else this.picker = false;
   }
 
   private cycleWind() {
@@ -419,6 +478,14 @@ export class HoleScene implements Scene {
 
   /** Desktop: Escape pauses; Space or Enter skips what is playing, tees off or goes to the next hole. */
   keyDown(e: KeyboardEvent): boolean {
+    if (e.key === 'Escape' && this.picker) {
+      this.picker = false;
+      return true;
+    }
+    if (this.picker && /^[1-9]$/.test(e.key) && Number(e.key) <= DISCS.length) {
+      this.pickDisc(Number(e.key) - 1);
+      return true;
+    }
     if (e.key === 'Escape') {
       if (this.mode === 'done' || !this.opts.onPause) return false;
       this.gesture = null;
@@ -452,6 +519,10 @@ export class HoleScene implements Scene {
   }
 
   down(p: PointerInfo, all: Map<number, PointerInfo>) {
+    if (this.picker) {
+      this.pickerTap(p);
+      return;
+    }
     if (all.size >= 2) {
       // Second finger: switch to pinch zoom, dropping whatever the first finger was doing.
       if (!this.puttViewVisible() && this.mode !== 'done') {
@@ -995,6 +1066,7 @@ export class HoleScene implements Scene {
     this.drawToast(ctx);
     this.drawHint(ctx);
     this.drawTray(ctx);
+    if (this.picker) this.drawPicker(ctx);
     if (this.mode === 'intro') this.drawIntro(ctx);
     if (this.mode === 'done') this.drawDone(ctx);
   }

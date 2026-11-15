@@ -47,9 +47,9 @@ const PAGES: Page[] = [
   {
     title: '2 · YOUR BAG',
     text: [
-      'Every disc flies its own way. Its four flight numbers are in the Locker, under YOUR BAG.',
+      'Every disc flies its own way, set by four flight numbers: speed, glide, turn and fade.',
       'Putters sit where they land. Fast drivers skate on, but need a big arm or they dump early.',
-      'Tap the disc button to swap.',
+      'Tap the disc button to pick from your bag.',
     ],
     art: (ctx, x, y) => {
       dots(ctx, curve(x + 70, y + 86, 45, (f) => -Math.pow(f, 3) * 8), PAL.ink, 2);
