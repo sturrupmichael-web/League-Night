@@ -141,7 +141,7 @@ export class HoleScene implements Scene {
   private lastPutterIdx = 0;
   private releaseIdx = 1;
   private styleIdx = 0;
-  private hand: Hand;
+  private readonly hand: Hand;
   private logs: ThrowLog[] = [];
   private undo: { state: HoleState; logs: ThrowLog[] }[] = [];
   private mullsUsed = 0;
@@ -223,7 +223,7 @@ export class HoleScene implements Scene {
     const tray: Button[] = [
       {
         x: 3, y: row1, w: 84, h: 20,
-        caption: () => `${this.disc.type} ${this.disc.speed}/${this.disc.glide}/${this.disc.turn}/${this.disc.fade}`,
+        caption: () => this.disc.type.toUpperCase(),
         value: () => `< ${this.disc.name} >`,
         onTap: () => this.swapDisc(),
       },
@@ -243,40 +243,35 @@ export class HoleScene implements Scene {
         cycle: true,
         enabled: () => !putting(),
       },
-      {
-        x: 3, y: row2, w: 41, h: 20,
-        caption: () => 'HAND',
-        value: () => (this.hand === 'right' ? 'RIGHTY' : 'LEFTY'),
-        onTap: () => (this.hand = this.hand === 'right' ? 'left' : 'right'),
-        cycle: true,
-      },
     ];
+    // Says what a tap does: show the whole hole, or go back to the disc.
     const map: Button = {
-      x: 0, y: row2, w: 41, h: 20,
-      caption: () => 'VIEW',
+      x: 0, y: row2, w: 0, h: 20,
+      caption: () => (this.rig.mode === 'overview' ? 'BACK TO' : 'SHOW'),
       value: () => (this.rig.mode === 'overview' ? 'DISC' : 'MAP'),
       onTap: () => this.toggleOverview(),
     };
     if (this.opts.practice) {
       tray.push(
-        { x: 46, y: row2, w: 41, h: 20, caption: () => 'WIND', value: () => PRACTICE_WINDS[this.windIdx].label, onTap: () => this.cycleWind(), cycle: true },
-        { x: 89, y: row2, w: 44, h: 20, caption: () => 'BACK TO', value: () => 'TEE', onTap: () => this.resetHole() },
-        { ...map, x: 135, w: 42 },
+        { x: 3, y: row2, w: 56, h: 20, caption: () => 'WIND', value: () => PRACTICE_WINDS[this.windIdx].label, onTap: () => this.cycleWind(), cycle: true },
+        { x: 61, y: row2, w: 56, h: 20, caption: () => 'BACK TO', value: () => 'TEE', onTap: () => this.resetHole() },
+        { ...map, x: 119, w: 58 },
       );
     } else {
+      // Throwing hand is set once (Settings or Chasers), so the slot goes to a wider mulligan.
       tray.push(
-        { ...map, x: 46 },
+        { ...map, x: 3, w: 50 },
         {
-          x: 89, y: row2, w: 44, h: 20,
+          x: 55, y: row2, w: 48, h: 20,
           caption: () => 'FIND',
           value: () => 'DISC',
           onTap: () => this.rig.snapBack(),
           enabled: () => this.rig.detached,
         },
         {
-          x: 135, y: row2, w: 42, h: 20,
-          caption: () => 'MULLIGAN',
-          value: () => `X${this.mullsLeft()}`,
+          x: 105, y: row2, w: 72, h: 20,
+          caption: () => `MULLIGAN · ${this.mullsLeft()} LEFT`,
+          value: () => 'REDO THROW',
           onTap: () => this.mulligan(),
           enabled: () => this.canMulligan(),
         },
