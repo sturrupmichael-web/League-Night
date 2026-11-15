@@ -1,6 +1,6 @@
 /** The locker: Cred and tier, disc dyes, pins and trophies, and the turn games to play any time. */
 import type { SaveData } from '../core/save';
-import { VIEW_W } from '../core/screen';
+import { EXTRA_H, VIEW_W } from '../core/screen';
 import { credTier, CRED_TIERS, DYES } from '../game/cred';
 import { drawText } from '../render/font';
 import { PAL } from '../render/palette';
@@ -41,7 +41,7 @@ export class LockerScene extends MenuScene {
         value: () => g.name,
         onTap: () => actions.turnGame(g.id),
       })),
-      { x: 50, y: 290, w: 80, h: 22, caption: () => '', value: () => 'BACK', onTap: actions.back },
+      { x: 50, y: 290 + EXTRA_H, w: 80, h: 22, caption: () => '', value: () => 'BACK', onTap: actions.back },
     ];
   }
 

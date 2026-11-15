@@ -1,5 +1,5 @@
 /** The online leaderboard: each player's best round per course and length, all time or this week. */
-import { VIEW_H, VIEW_W } from '../core/screen';
+import { EXTRA_H, VIEW_H, VIEW_W } from '../core/screen';
 import { COURSES } from '../content/courses';
 import { formatToPar } from '../game/rules';
 import { boardLabel, weekStart } from '../net/leaderboard';
@@ -9,7 +9,7 @@ import { PAL } from '../render/palette';
 import { drawButton } from '../ui/button';
 import { drawBigText, drawLanterns, MenuScene } from '../ui/menu';
 
-const ROWS = 14;
+const ROWS = 14 + Math.floor(EXTRA_H / 10); // taller phones show more of the board
 
 export class LeaderboardScene extends MenuScene {
   private courseIdx: number;

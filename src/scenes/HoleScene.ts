@@ -12,7 +12,7 @@ import discsJson from '../content/discs.json';
 import { CameraRig } from '../core/camera';
 import type { PointerInfo } from '../core/input';
 import type { Scene } from '../core/scene';
-import { VIEW_H, VIEW_W } from '../core/screen';
+import { EXTRA_H, VIEW_H, VIEW_W } from '../core/screen';
 import type { AiHole, AiThrow } from '../game/ai';
 import { holeWind } from '../game/conditions';
 import type { HoleDef } from '../game/hole';
@@ -53,9 +53,10 @@ const PRACTICE_WINDS: { label: string; range: [number, number] }[] = [
 
 const AIM_ZOOM = 0.55;
 const FLIGHT_ZOOM = 0.7;
-const DISC_ANCHOR_Y = 200;
+const DISC_ANCHOR_Y = 200 + EXTRA_H; // the same 70 px above the tray on every screen
+const FLIGHT_ANCHOR_Y = 150 + Math.round(EXTRA_H / 2);
 const HUD_H = 24;
-const TRAY_Y = 270;
+const TRAY_Y = VIEW_H - 50;
 
 const REST_TEXT: Record<RestKind, string> = {
   holed: 'CHAINS!',
@@ -937,10 +938,10 @@ export class HoleScene implements Scene {
 
     if (this.mode === 'rival' && this.rivalAnim) {
       const p = samplePath(this.rivalAnim.path, this.rivalAnim.t);
-      this.rig.setFollow({ x: p.x, y: p.y, zoom: FLIGHT_ZOOM, ay: 150 });
+      this.rig.setFollow({ x: p.x, y: p.y, zoom: FLIGHT_ZOOM, ay: FLIGHT_ANCHOR_Y });
     } else if (this.mode === 'flight' || (this.mode === 'rest' && this.current)) {
       const p = this.discPosNow();
-      this.rig.setFollow({ x: p.x, y: p.y, zoom: FLIGHT_ZOOM, ay: 150 });
+      this.rig.setFollow({ x: p.x, y: p.y, zoom: FLIGHT_ZOOM, ay: FLIGHT_ANCHOR_Y });
     } else {
       const lie = this.state.lie;
       this.rig.setFollow({ x: lie.x, y: lie.y, zoom: AIM_ZOOM, ay: DISC_ANCHOR_Y });

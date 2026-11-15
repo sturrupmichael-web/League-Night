@@ -157,6 +157,8 @@ export const DEFAULT_CONFIG = {
 
   // ---- Input ----
   maxPullPx: 64,
+  /** Tallest the game view may grow on tall phones (game pixels; 320 = the classic 9:16). Read at load: reload after changing. */
+  maxViewH: 400,
   grabRadiusPx: 22,
   cancelPullPx: 8,
   /** Fraction of the flight time shown as the faint preview line. */
@@ -221,6 +223,7 @@ export const CONFIG_META: ConfigMeta[] = [
   m('Putting', 'blowThroughRatio', 1, 2, 0.01),
   m('Putting', 'gimmeFt', 0, 20, 1),
   m('Input', 'maxPullPx', 30, 120, 1),
+  m('Screen', 'maxViewH', 320, 440, 4),
   m('Input', 'previewFraction', 0, 1, 0.05),
 ];
 

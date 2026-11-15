@@ -2,7 +2,7 @@
 import { sfx } from '../core/audio';
 import type { PointerInfo } from '../core/input';
 import type { Scene } from '../core/scene';
-import { VIEW_H, VIEW_W } from '../core/screen';
+import { EXTRA_H, VIEW_H, VIEW_W } from '../core/screen';
 import { drawText } from '../render/font';
 import { PAL } from '../render/palette';
 import { panel } from '../render/sprites';
@@ -43,6 +43,8 @@ export class MenuScene implements Scene {
   protected time = 0;
 
   constructor(protected opts: MenuOpts) {
+    // Taller phones: pause-style panels move to the middle, full screens ease their buttons down a little.
+    if (EXTRA_H > 0 && opts.top > 0) this.opts = opts = { ...opts, top: opts.top + Math.round(EXTRA_H / (opts.overlay ? 2 : 4)) };
     this.overlay = !!opts.overlay;
     const w = opts.width ?? 120;
     const gap = opts.gap ?? 26;
@@ -128,7 +130,7 @@ function drawFireflies(ctx: CanvasRenderingContext2D, time: number) {
   const t = motion.reduced ? 0 : time;
   for (let i = 0; i < 9; i++) {
     const x = (i * 47 + Math.sin(t * 0.3 + i * 2.1) * 24 + 400) % VIEW_W;
-    const y = 40 + ((i * 73) % 260) + Math.sin(t * 0.5 + i) * 10;
+    const y = 40 + ((i * 73) % (VIEW_H - 60)) + Math.sin(t * 0.5 + i) * 10;
     const glow = (Math.sin(t * 1.3 + i * 1.7) + 1) / 2;
     if (glow < 0.35) continue;
     ctx.fillStyle = glow > 0.8 ? 'rgba(242,181,68,0.35)' : 'rgba(242,181,68,0.18)';

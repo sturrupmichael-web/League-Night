@@ -5,7 +5,7 @@
 import { CONFIG_META, type Config, DEFAULT_CONFIG } from '../config';
 import type { ThrowResult } from '../sim/throw';
 
-const KEY = 'leaguenight.dev.config.v1';
+export const KEY = 'leaguenight.dev.config.v1';
 
 export function loadDevOverrides(cfg: Config) {
   try {

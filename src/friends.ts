@@ -6,7 +6,7 @@ import { HowToScene } from './scenes/HowTo';
 import { config, type Config } from './config';
 import discsJson from './content/discs.json';
 import type { Game } from './core/game';
-import { VIEW_W } from './core/screen';
+import { EXTRA_H, VIEW_W } from './core/screen';
 import type { AiHole, AiThrow } from './game/ai';
 import { chaserById, chaserConfig } from './game/chasers';
 import type { CourseDef, HoleDef } from './game/hole';
@@ -191,7 +191,7 @@ export class Friends {
           drawText(ctx, 'EVERY THROW IS CHECKED ON BOTH PHONES', VIEW_W / 2, 70, PAL.haze, 'center');
           if (this.status) drawText(ctx, this.status, VIEW_W / 2, 236, PAL.red, 'center');
           const l = backendLabel();
-          if (l) drawText(ctx, l, VIEW_W / 2, 306, PAL.dusk, 'center');
+          if (l) drawText(ctx, l, VIEW_W / 2, 306 + EXTRA_H, PAL.dusk, 'center');
         },
       }),
     );
@@ -368,7 +368,7 @@ export class Friends {
         enabled: () => !!this.syncError || waiting() || over() || play().ok,
         box: { x: 20, y: 236, w: 140, h: 24 },
       },
-      { caption: 'QUICK CHAT', value: 'CHAT', onTap: () => this.chat(), enabled: () => !waiting(), box: { x: 4, y: 270, w: 56, h: 22 } },
+      { caption: 'QUICK CHAT', value: 'CHAT', onTap: () => this.chat(), enabled: () => !waiting(), box: { x: 4, y: 270 + EXTRA_H, w: 56, h: 22 } },
       {
         caption: () => (confirmConcede ? 'CANNOT UNDO' : waiting() ? 'CALL IT OFF' : 'GIVE IT AWAY'),
         value: () => (confirmConcede ? 'REALLY?' : waiting() ? 'CANCEL' : 'CONCEDE'),
@@ -378,9 +378,9 @@ export class Friends {
           void this.concede();
         },
         enabled: () => !over(),
-        box: { x: 62, y: 270, w: 56, h: 22 },
+        box: { x: 62, y: 270 + EXTRA_H, w: 56, h: 22 },
       },
-      { caption: '', value: 'BACK', onTap: () => this.menu(), box: { x: 120, y: 270, w: 56, h: 22 } },
+      { caption: '', value: 'BACK', onTap: () => this.menu(), box: { x: 120, y: 270 + EXTRA_H, w: 56, h: 22 } },
     ];
     // Rematch already started by either player?
     if (over() && this.net) {

@@ -7,7 +7,7 @@ import { CameraRig } from '../core/camera';
 import { sfx } from '../core/audio';
 import type { PointerInfo } from '../core/input';
 import type { Scene } from '../core/scene';
-import { VIEW_H, VIEW_W } from '../core/screen';
+import { EXTRA_H, VIEW_H, VIEW_W } from '../core/screen';
 import discsJson from '../content/discs.json';
 import type { Highlight } from '../game/highlights';
 import type { HoleDef } from '../game/hole';
@@ -28,7 +28,7 @@ import { type Button, drawButton, hit } from '../ui/button';
 
 const DISCS = discsJson as Disc[];
 const TOP = 24;
-const BOTTOM = 290;
+const BOTTOM = 290 + EXTRA_H;
 
 export interface Clip {
   hl: Highlight;
@@ -73,7 +73,7 @@ export class ReplayScene implements Scene {
     if (rp.t === 'throw') {
       const r = simulateThrow(rp.input, disc, { terrain, wind: c.wind, basket: c.hole.basket }, rp.seed, this.cfg);
       const view = new HoleRenderer(c.hole, terrain);
-      const rig = new CameraRig({ x: rp.input.origin.x, y: rp.input.origin.y, zoom: 0.7, ay: 160 }, VIEW_W, this.cfg);
+      const rig = new CameraRig({ x: rp.input.origin.x, y: rp.input.origin.y, zoom: 0.7, ay: 160 + Math.round(EXTRA_H / 2) }, VIEW_W, this.cfg);
       this.live = { kind: 'throw', view, rig, path: r.path, end: r.path[r.path.length - 1].t, color, holed: r.ground.kind === 'holed' };
     } else {
       const proj = new PuttProjector(terrain, rp.lie, c.hole.basket);
@@ -117,7 +117,7 @@ export class ReplayScene implements Scene {
     if ((L.kind === 'throw' ? L.holed : L.made) && prev < L.end && this.t >= L.end) sfx.play('chains');
     if (L.kind === 'throw') {
       const p = sample(L.path, Math.min(this.t, L.end));
-      L.rig.setFollow({ x: p.x, y: p.y, zoom: 0.7, ay: 160 });
+      L.rig.setFollow({ x: p.x, y: p.y, zoom: 0.7, ay: 160 + Math.round(EXTRA_H / 2) });
       L.rig.update(dt, 4);
     }
     if (this.t > L.end + 1.6) this.next();

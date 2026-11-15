@@ -2,7 +2,7 @@
 import { sfx } from '../core/audio';
 import type { PointerInfo } from '../core/input';
 import type { Scene } from '../core/scene';
-import { VIEW_W } from '../core/screen';
+import { VIEW_H, VIEW_W } from '../core/screen';
 import { CODE_ALPHABET } from '../net/types';
 import { drawText } from '../render/font';
 import { PAL } from '../render/palette';
@@ -114,7 +114,7 @@ export class CodeEntryScene implements Scene {
 
   render(ctx: CanvasRenderingContext2D) {
     ctx.fillStyle = PAL.night1;
-    ctx.fillRect(0, 0, VIEW_W, 320);
+    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
     drawLanterns(ctx, this.time);
     drawBigText(ctx, 'JOIN A MATCH', VIEW_W / 2, 36, PAL.amber);
     drawText(ctx, "TYPE YOUR FRIEND'S CODE", VIEW_W / 2, 58, PAL.haze, 'center');

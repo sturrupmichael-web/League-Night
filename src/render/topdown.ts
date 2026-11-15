@@ -1,4 +1,5 @@
 /** Shared top-down drawing: terrain, markers, tee, trees, basket, minimap. */
+import { VIEW_H, VIEW_W } from '../core/screen';
 import type { HoleDef } from '../game/hole';
 import type { Terrain } from '../sim/terrain';
 import { type Camera, FieldRenderer, THEME_PALETTES, worldToScreen } from './field';
@@ -17,7 +18,7 @@ export class HoleRenderer {
   ) {
     const m = 60;
     const b = hole.box;
-    this.field = new FieldRenderer(terrain, b.x0 - m, b.y0 - m, b.x1 + m, b.y1 + m, 2, 180, 320, hole.theme);
+    this.field = new FieldRenderer(terrain, b.x0 - m, b.y0 - m, b.x1 + m, b.y1 + m, 2, VIEW_W, VIEW_H, hole.theme);
   }
 
   drawWorld(ctx: CanvasRenderingContext2D, cam: Camera, time: number, opts: { flash: number; top: number; bottom: number }) {
@@ -66,7 +67,7 @@ export class HoleRenderer {
     const to = (px: number, py: number) => ({ x: x + (px - box.x0) * scale, y: y + h - (py - box.y0) * scale });
     // Current view rectangle.
     const v0 = to(view.x + (0 - view.ax) / view.zoom, view.y - (40 - view.ay) / view.zoom);
-    const v1 = to(view.x + (180 - view.ax) / view.zoom, view.y - (270 - view.ay) / view.zoom);
+    const v1 = to(view.x + (VIEW_W - view.ax) / view.zoom, view.y - (VIEW_H - 50 - view.ay) / view.zoom); // to the tray's top edge
     ctx.strokeStyle = 'rgba(244,233,205,0.6)';
     ctx.lineWidth = 1;
     const rx = Math.max(x, Math.round(v0.x)) + 0.5;

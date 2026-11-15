@@ -12,7 +12,7 @@ import { motion } from './core/motion';
 import { music } from './core/music';
 import type { Game } from './core/game';
 import { loadSave, type SaveData, writeSave } from './core/save';
-import { VIEW_W } from './core/screen';
+import { EXTRA_H, VIEW_W } from './core/screen';
 import { type AiHole, playAiHole } from './game/ai';
 import { cupWinner, standings } from './game/championship';
 import { chaserById, chaserConfig, CHASERS, chaptersUnlocked, isChaserUnlocked } from './game/chasers';
@@ -157,11 +157,11 @@ export class App {
     );
     const small = (x: number, y: number, caption: string, value: string, onTap: () => void): MenuItem => ({ caption, value, onTap, box: { x, y, w: 56, h: 20 } });
     items.push(
-      small(4, 254, 'WHO YOU ARE', 'CHASERS', () => this.chasers(() => this.title())),
-      small(62, 254, 'CRED', 'LOCKER', () => this.locker()),
-      small(120, 254, 'SIX PAGES', 'HOW TO', () => this.game.set(new HowToScene(() => this.title()))),
-      small(4, 277, 'MUSIC · SOUND', 'SETTINGS', () => this.settings()),
-      small(62, 277, '', 'CREDITS', () => this.credits()),
+      small(4, 254 + EXTRA_H, 'WHO YOU ARE', 'CHASERS', () => this.chasers(() => this.title())),
+      small(62, 254 + EXTRA_H, 'CRED', 'LOCKER', () => this.locker()),
+      small(120, 254 + EXTRA_H, 'SIX PAGES', 'HOW TO', () => this.game.set(new HowToScene(() => this.title()))),
+      small(4, 277 + EXTRA_H, 'MUSIC · SOUND', 'SETTINGS', () => this.settings()),
+      small(62, 277 + EXTRA_H, '', 'CREDITS', () => this.credits()),
     );
     const ch = this.chaser;
     this.game.set(
@@ -174,8 +174,8 @@ export class App {
           drawBigText(ctx, 'LEAGUE', VIEW_W / 2, 32, PAL.amber, 3);
           drawBigText(ctx, 'NIGHT', VIEW_W / 2, 52, PAL.ink, 3);
           drawText(ctx, 'TEE TIME IS AT DUSK', VIEW_W / 2, 74, PAL.haze, 'center');
-          drawChaser(ctx, 150, 316, ch, this.save.outfits[ch.id] ?? 0, 1, (Math.sin(t * 2) + 1) / 2);
-          drawText(ctx, `${this.save.cred} CRED`, 150, 278, PAL.amber, 'center');
+          drawChaser(ctx, 150, 316 + EXTRA_H, ch, this.save.outfits[ch.id] ?? 0, 1, (Math.sin(t * 2) + 1) / 2);
+          drawText(ctx, `${this.save.cred} CRED`, 150, 278 + EXTRA_H, PAL.amber, 'center');
         },
       }),
     );
@@ -520,7 +520,7 @@ export class App {
     const over = isRoundOver(round);
     this.game.set(
       new MenuScene({
-        top: 270,
+        top: 270 + EXTRA_H,
         items: [{ caption: over ? 'FINAL STANDINGS' : `HOLE ${round.card.length + 1} NEXT`, value: over ? 'SEE THE CARD' : 'NEXT HOLE', onTap: next, primary: true }],
         draw: (ctx, t) => {
           drawLanterns(ctx, t, -8);
@@ -556,7 +556,7 @@ export class App {
     const over = isRoundOver(round);
     this.game.set(
       new MenuScene({
-        top: 270,
+        top: 270 + EXTRA_H,
         items: [{ caption: over ? 'MATCH OVER' : `${1 + (round.settings.skinsRule === 'carry' ? t.carry : 0)} ON THE LINE NEXT`, value: over ? 'SEE THE CARD' : 'NEXT HOLE', onTap: next, primary: true }],
         draw: (ctx, tm) => {
           drawLanterns(ctx, tm, -8);
@@ -937,7 +937,7 @@ export class App {
     ];
     this.game.set(
       new MenuScene({
-        top: 274,
+        top: 274 + EXTRA_H,
         items: [{ caption: '', value: 'BACK', onTap: () => this.title() }],
         draw: (ctx, t) => {
           drawLanterns(ctx, t);
