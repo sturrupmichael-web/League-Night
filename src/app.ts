@@ -222,8 +222,9 @@ export class App {
           overlay: { title: 'FIRST NIGHT AT THE LEAGUE?', sub: 'WARM UP BEFORE YOUR CARD' },
           top: 128,
           items: [
+            { caption: 'SIX SHORT PAGES', value: 'HOW TO PLAY', onTap: () => this.game.push(new HowToScene(() => this.game.pop())) },
             { caption: 'NO SCORE, NO PRESSURE', value: 'PRACTICE FIELD', onTap: () => this.practice() },
-            { caption: "I'M READY", value: 'SKIP', onTap: () => this.setup() },
+            { caption: "I'M READY", value: 'SKIP', onTap: () => this.setup(), primary: true },
           ],
         }),
       );
@@ -791,7 +792,11 @@ export class App {
   private pause(round: RoundState | null) {
     let confirmRestart = false;
     let confirmConcede = false;
-    const items: MenuItem[] = [{ caption: '', value: 'RESUME', onTap: () => this.game.pop(), primary: true }, ...this.toggles()];
+    const items: MenuItem[] = [
+      { caption: '', value: 'RESUME', onTap: () => this.game.pop(), primary: true },
+      { caption: 'SIX SHORT PAGES', value: 'HOW TO PLAY', onTap: () => this.game.push(new HowToScene(() => this.game.pop())) },
+      ...this.toggles(),
+    ];
     if (round && roundMode(round) === 'skins' && !this.ephemeral) {
       items.push({
         caption: () => (confirmConcede ? 'CANNOT BE UNDONE' : 'GIVE THE MATCH AWAY'),
@@ -888,11 +893,8 @@ export class App {
               this.persist();
             },
           },
-          {
-            caption: 'TUNING SLIDERS',
-            value: () => (this.hooks.devOn?.() ? 'DEV PANEL ON' : 'TURN ON'),
-            onTap: () => this.hooks.enableDev?.(),
-          },
+          // Developer tuning: only offered when the game was opened with ?dev=1.
+          ...(this.hooks.devOn?.() ? [{ caption: 'TUNING SLIDERS', value: 'DEV PANEL ON', onTap: () => {} }] : []),
           { caption: '', value: 'BACK', onTap: () => this.title() },
         ],
         draw: (ctx, t) => {

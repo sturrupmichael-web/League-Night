@@ -2,6 +2,7 @@
  * Play a Friend: host or join a match, the match card, quick chat, playing a match hole
  * (uploading every throw), watching a friend's hole, concede, rematch and your-turn alerts.
  */
+import { HowToScene } from './scenes/HowTo';
 import { config, type Config } from './config';
 import discsJson from './content/discs.json';
 import type { Game } from './core/game';
@@ -667,10 +668,11 @@ export class Friends {
     this.game.push(
       new MenuScene({
         overlay: { title: 'PAUSED', sub: 'FRIEND MATCH · EVERY THROW IS SAVED' },
-        top: 100,
+        top: 88,
         onBack: () => this.game.pop(),
         items: [
           { caption: '', value: 'RESUME', onTap: () => this.game.pop(), primary: true },
+          { caption: 'SIX SHORT PAGES', value: 'HOW TO PLAY', onTap: () => this.game.push(new HowToScene(() => this.game.pop())) },
           ...this.host.toggles(),
           { caption: 'PICK UP HERE LATER', value: 'BACK TO THE CARD', onTap: () => this.leaveHole() },
           {

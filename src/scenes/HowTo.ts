@@ -26,7 +26,7 @@ const PAGES: Page[] = [
     title: '1 · THROWING',
     text: [
       'Put your thumb on the disc, pull back and let go. A longer pull means more power.',
-      'Past the red line is the redline: extra distance, but the release gets wild.',
+      'Pull past the red mark for extra distance, but the release gets wild.',
       'Drag back onto the disc to cancel.',
     ],
     art: (ctx, x, y, t) => {
@@ -47,7 +47,7 @@ const PAGES: Page[] = [
   {
     title: '2 · YOUR BAG',
     text: [
-      'Each disc has four numbers: speed, glide, turn and fade.',
+      'Every disc in your bag flies its own way.',
       'Putters sit where they land. Fast drivers skate on, but need a big arm or they dump early.',
       'Tap the disc button to swap.',
     ],
@@ -151,13 +151,28 @@ export class HowToScene extends MenuScene {
   private page = 0;
 
   constructor(done: () => void) {
-    super({ items: [], top: 0 });
+    super({ items: [], top: 0, onBack: done });
     const y = VIEW_H - 28;
-    this.buttons = [
-      { x: 6, y, w: 52, h: 22, caption: () => 'PAGE', value: () => 'BACK', onTap: () => (this.page = Math.max(0, this.page - 1)), enabled: () => this.page > 0 },
-      { x: 64, y, w: 52, h: 22, caption: () => `${this.page + 1} OF ${PAGES.length}`, value: () => 'DONE', onTap: done },
-      { x: 122, y, w: 52, h: 22, caption: () => 'PAGE', value: () => 'NEXT', onTap: () => (this.page = Math.min(PAGES.length - 1, this.page + 1)), enabled: () => this.page < PAGES.length - 1 },
-    ];
+    const last = () => this.page === PAGES.length - 1;
+    const done_ = { x: 64, y, w: 52, h: 22, caption: () => '', value: () => 'DONE', onTap: done, primary: false };
+    const next = { x: 122, y, w: 52, h: 22, caption: () => '', value: () => 'NEXT', onTap: () => this.turn(1), enabled: () => !last(), primary: true };
+    this.buttons = [{ x: 6, y, w: 52, h: 22, caption: () => '', value: () => 'BACK', onTap: () => this.turn(-1), enabled: () => this.page > 0 }, done_, next];
+    this.doneButton = done_;
+    this.isLast = last;
+  }
+
+  private doneButton: { primary: boolean };
+  private isLast: () => boolean;
+
+  private turn(d: number) {
+    this.page = Math.max(0, Math.min(PAGES.length - 1, this.page + d));
+  }
+
+  keyDown(e: KeyboardEvent) {
+    if (e.key === 'ArrowRight') this.turn(1);
+    else if (e.key === 'ArrowLeft') this.turn(-1);
+    else return super.keyDown(e);
+    return true;
   }
 
   render(ctx: CanvasRenderingContext2D) {
@@ -176,6 +191,9 @@ export class HowToScene extends MenuScene {
       }
       y += 5;
     }
+    // The amber button walks you through the pages, then finishes.
+    this.doneButton.primary = this.isLast();
+    drawText(ctx, `PAGE ${this.page + 1} OF ${PAGES.length}`, VIEW_W / 2, VIEW_H - 38, PAL.haze, 'center');
     for (const b of this.buttons) drawButton(ctx, b);
   }
 }
