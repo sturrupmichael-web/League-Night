@@ -10,7 +10,7 @@ import { applyThrow, isHoleOver, newHole } from '../game/rules';
 import { PuttProjector } from '../render/puttView';
 import type { Disc } from '../sim/discs';
 import { dist, type Vec2 } from '../sim/math';
-import { resolvePutt } from '../sim/putt';
+import { PUTT_PHYSICS, resolvePutt } from '../sim/putt';
 import { makeRng, mixSeed } from '../sim/rng';
 import type { Terrain } from '../sim/terrain';
 import { simulateThrow } from '../sim/throw';
@@ -84,7 +84,12 @@ export function verifyHole(payloads: ThrowPayload[], hole: HoleDef, terrain: Ter
       if (!near(p.replay.lie, from)) issues.push(`throw ${n}: putted from the wrong spot`);
       const proj = new PuttProjector(terrain, from, hole.basket);
       const w = windAt(wind, 0, 0, cfg.windScale);
-      const res = resolvePutt(p.replay.read, { distance: proj.distance, rise: proj.rise, crosswind: proj.crosswind(w) }, makeRng(seed), cfg);
+      const pv = puttPhysics(p.replay.pv);
+      if (pv === 0) {
+        issues.push(`throw ${n}: unknown putting physics`);
+        continue;
+      }
+      const res = resolvePutt(p.replay.read, { distance: proj.distance, rise: proj.rise, crosswind: proj.crosswind(w) }, makeRng(seed), cfg, pv);
       const restW = proj.toWorld(res.rest.u, res.rest.v);
       const surf = terrain.surface(restW.x, restW.y);
       made = res.made;
@@ -101,4 +106,11 @@ export function verifyHole(payloads: ThrowPayload[], hole: HoleDef, terrain: Ter
     state = applyThrow(state, cfg, { penalty, holed: made, lie });
   }
   return { ok: issues.length === 0, issues, strokes: state.strokes };
+}
+
+/** The putting physics a replay says it used: missing means 1 (before versions were recorded); 0 = not a version we know. */
+function puttPhysics(pv: unknown): number {
+  if (pv === undefined) return 1;
+  if (typeof pv === 'number' && Number.isInteger(pv) && pv >= 1 && pv <= PUTT_PHYSICS) return pv;
+  return 0;
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG as cfg } from '../config';
-import { describeMiss, idealPuttPower, previewPutt, puttPowerWindow, readSwipe, resolvePutt, type SwipePoint, type SwipeRead } from './putt';
+import { basketChancesV2, describeMiss, idealPuttPower, previewPutt, puttPowerWindow, readSwipe, resolvePutt, type SwipePoint, type SwipeRead } from './putt';
 import { makeRng } from './rng';
 
 /** A straight upward swipe of `len` px over `ms`, with a constant finger speed. */
@@ -193,5 +193,47 @@ describe('putting aids', () => {
     expect(m?.kind).toBe('left');
     expect(m!.ft).toBeGreaterThanOrEqual(1);
     expect(describeMiss(putt(straight(w.ideal), 12), { distance: 12, rise: 0 }, cfg)).toBeNull();
+  });
+});
+
+describe('putting physics v2 at the basket', () => {
+  const mid = (cfg.basketCatchLow + cfg.basketCatchHigh) / 2;
+  it('a well-weighted putt dead centre is always in', () => {
+    expect(basketChancesV2(0, mid, 1, cfg).inChance).toBe(1);
+    expect(basketChancesV2(0.2, mid, 1.05, cfg).inChance).toBe(1);
+  });
+  it('the outer chains spit more, and more when it is faster', () => {
+    const edge = basketChancesV2(0.8, mid, 1, cfg).inChance;
+    expect(edge).toBeLessThan(0.95);
+    expect(basketChancesV2(0.8, mid, 1.2, cfg).inChance).toBeLessThan(edge);
+    expect(basketChancesV2(0.8, mid, 0.85, cfg).inChance).toBeGreaterThan(edge);
+  });
+  it('high in the chains is riskier than the middle', () => {
+    expect(basketChancesV2(0.5, cfg.basketCatchHigh - 0.05, 1, cfg).inChance).toBeLessThan(basketChancesV2(0.5, mid, 1, cfg).inChance);
+  });
+  it('a rocket can push through dead centre', () => {
+    expect(basketChancesV2(0, mid, 1.6, cfg).inChance).toBeLessThan(1);
+  });
+  it('near misses: the outer chains can grab one, the rim can pop one in, the band mostly bounces', () => {
+    expect(basketChancesV2(cfg.chainHalfWidth + 0.05, mid, 0.95, cfg)).toMatchObject({ zone: 'edge' });
+    expect(basketChancesV2(cfg.chainHalfWidth + 0.05, mid, 0.95, cfg).inChance).toBeGreaterThan(0);
+    expect(basketChancesV2(0.1, cfg.basketCatchLow - 0.05, 0.95, cfg).inChance).toBeGreaterThan(0.2);
+    const band = basketChancesV2(0.2, cfg.basketCatchHigh + 0.1, 0.95, cfg);
+    expect(band.zone).toBe('band');
+    expect(band.inChance).toBeLessThan(0.25);
+  });
+  it('band hits and rim-ins come up in play, and finish where a disc can be', () => {
+    const seen = new Set<string>();
+    const d = 25;
+    const w = puttPowerWindow(d, 0, cfg);
+    for (let k = 0; k < 400; k++) {
+      const power = w.low * 0.9 + ((w.high * 1.1 - w.low * 0.9) * k) / 400;
+      const r = resolvePutt({ ...straight(power), aim: ((k % 7) - 3) * 0.004 }, { distance: d, rise: 0 }, makeRng(k), cfg);
+      seen.add(r.outcome);
+      if (r.outcome === 'band') expect(Math.abs(r.rest.v - d)).toBeLessThan(4);
+      if (r.outcome === 'rim') expect(r.made).toBe(true);
+    }
+    expect(seen.has('band')).toBe(true);
+    expect(seen.has('rim')).toBe(true);
   });
 });

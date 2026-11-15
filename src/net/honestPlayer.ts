@@ -5,7 +5,7 @@ import { applyThrow, isHoleOver, newHole } from '../game/rules';
 import { PuttProjector } from '../render/puttView';
 import type { Disc } from '../sim/discs';
 import { angleFromDir, dist } from '../sim/math';
-import { idealPuttPower, resolvePutt } from '../sim/putt';
+import { idealPuttPower, PUTT_PHYSICS, resolvePutt } from '../sim/putt';
 import { makeRng, mixSeed } from '../sim/rng';
 import { makeTerrain } from '../sim/terrain';
 import { simulateThrow } from '../sim/throw';
@@ -35,12 +35,12 @@ export function playHonestHole(course: CourseDef, idx: number, matchSeed: number
       const seed = mixSeed(holeSeed, hole.id * 1000 + ++throwNo);
       const proj = new PuttProjector(terrain, s.lie, hole.basket);
       const read = { cancel: false as const, power: idealPuttPower(proj.distance, proj.rise, cfg), aim: 0, bend: 0, snap: 0, releaseSpeed: 400 };
-      const res = resolvePutt(read, { distance: proj.distance, rise: proj.rise, crosswind: proj.crosswind(windAt(wind, 0, 0, cfg.windScale)) }, makeRng(seed), cfg);
+      const res = resolvePutt(read, { distance: proj.distance, rise: proj.rise, crosswind: proj.crosswind(windAt(wind, 0, 0, cfg.windScale)) }, makeRng(seed), cfg, PUTT_PHYSICS);
       const restW = proj.toWorld(res.rest.u, res.rest.v);
       const surf = terrain.surface(restW.x, restW.y);
       const penalty = !res.made && (surf === 'water' || surf === 'ob') ? 1 : 0;
       const lie = res.made ? { ...hole.basket } : penalty ? { ...s.lie } : restW;
-      out.push({ kind: 'putt', n: s.throws + 1, replay: { t: 'putt', lie: { ...s.lie }, read, seed }, lie, penalty, made: res.made });
+      out.push({ kind: 'putt', n: s.throws + 1, replay: { t: 'putt', lie: { ...s.lie }, read, seed, pv: PUTT_PHYSICS }, lie, penalty, made: res.made });
       s = applyThrow(s, cfg, { penalty, holed: res.made, lie });
     } else {
       if (s.throws + 1 === mulliganAt) ++throwNo;

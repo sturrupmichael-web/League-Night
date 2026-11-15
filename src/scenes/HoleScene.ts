@@ -29,7 +29,7 @@ import type { Disc } from '../sim/discs';
 import type { Hand, Style, ThrowInput } from '../sim/flight';
 import type { RestKind } from '../sim/ground';
 import { angleFromDir, clamp, dist, lerp, type PathPoint, type Vec2 } from '../sim/math';
-import { describeMiss, type PuttOutcome, type PuttResult, type PuttSetup, previewPutt, puttPowerWindow, readSwipe, resolvePutt, type SwipePoint } from '../sim/putt';
+import { describeMiss, type PuttOutcome, type PuttResult, type PuttSetup, previewPutt, PUTT_PHYSICS, puttPowerWindow, readSwipe, resolvePutt, type SwipePoint } from '../sim/putt';
 import { makeRng, mixSeed } from '../sim/rng';
 import { makeTerrain, type Terrain } from '../sim/terrain';
 import { simulateThrow, type ThrowResult } from '../sim/throw';
@@ -72,6 +72,8 @@ const REST_TEXT: Record<RestKind, string> = {
 
 const PUTT_TEXT: Record<PuttOutcome, string> = {
   chains: 'CHAINS!',
+  rim: 'IN OFF THE RIM!',
+  band: 'OFF THE BAND',
   spit: 'SPIT OUT',
   over: 'OVER THE TOP',
   cage: 'CAGED',
@@ -758,7 +760,7 @@ export class HoleScene implements Scene {
     const proj = this.projector();
     const seed = this.nextSeed();
     const setup = this.puttSetup(proj);
-    const res = resolvePutt(read, setup, makeRng(seed), this.cfg);
+    const res = resolvePutt(read, setup, makeRng(seed), this.cfg, PUTT_PHYSICS);
     this.undo.push({ state: this.state, logs: [...this.logs] });
     this.putt = { proj, res, anim: animatePutt(res, setup, this.cfg), hitDone: false, t: 0, done: false, read, seed };
     this.mode = 'putting';
@@ -809,7 +811,7 @@ export class HoleScene implements Scene {
     const from = proj.distance;
     this.state = applyThrow(this.state, this.cfg, { penalty, holed: res.made, lie });
     const pt = this.putt!;
-    this.log({ kind: 'putt', fromFt: from, toFt: this.distToBasket(), distanceFt: dist(pt.proj.lie, restW), penalty, made: res.made, surface: surf, replay: { t: 'putt', lie: { ...pt.proj.lie }, read: pt.read, seed: pt.seed } });
+    this.log({ kind: 'putt', fromFt: from, toFt: this.distToBasket(), distanceFt: dist(pt.proj.lie, restW), penalty, made: res.made, surface: surf, replay: { t: 'putt', lie: { ...pt.proj.lie }, read: pt.read, seed: pt.seed, pv: PUTT_PHYSICS } });
     this.mode = 'rest';
     this.restTimer = 0;
   }
@@ -821,7 +823,7 @@ export class HoleScene implements Scene {
       this.flash = hit.kind === 'chains' ? 1.2 : 0.5;
       const b = proj.project(hit.u, proj.distance - 0.3, proj.rise + hit.h);
       if (b && hit.kind === 'chains') this.fxScreen.burst('chains', b.x, b.y, 0);
-    } else if (hit.kind === 'tray' || hit.kind === 'pole') {
+    } else if (hit.kind === 'tray' || hit.kind === 'pole' || hit.kind === 'band') {
       sfx.play('clank');
     }
   }

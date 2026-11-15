@@ -75,7 +75,18 @@ export function readSwipe(points: SwipePoint[], cfg: Config, live = false): Swip
   return { cancel: false, power, aim, bend, snap, releaseSpeed };
 }
 
-export type PuttOutcome = 'chains' | 'spit' | 'over' | 'cage' | 'short' | 'wide';
+/** 'rim' = popped in off the tray rim (a make); 'band' = bounced off the top band (a miss). Both only exist in physics v2. */
+export type PuttOutcome = 'chains' | 'rim' | 'spit' | 'band' | 'over' | 'cage' | 'short' | 'wide';
+
+/**
+ * Putting physics version. Every putt's replay records the version it was played with, so
+ * rounds (and friend matches) started on an older build still check out on the server.
+ *  1: chains are a hard box; only fast off-centre putts spit out.
+ *  2: chain edges, high hits and rockets can spit out, soft putts die into the chains, the
+ *     outer chains can grab a near miss, rim hits can pop in, top-band hits bounce off.
+ * Never change what an existing version does: add a new one.
+ */
+export const PUTT_PHYSICS = 2;
 
 export interface PuttSetup {
   /** Distance to the basket, ft. */
@@ -156,6 +167,7 @@ export function describeMiss(res: PuttResult, setup: PuttSetup, cfg: Config): { 
       return ratio >= cfg.spitRatio ? { kind: 'hard', ft: 0 } : { kind: 'offline', ft: 0 };
     }
     case 'over':
+    case 'band':
       return { kind: 'high', ft: ft(at.h - cfg.basketCatchHigh) };
     case 'cage':
     case 'short':
@@ -181,7 +193,7 @@ export function idealArrivalSpeed(distance: number, rise: number, cfg: Config): 
 /** Ground height along the putting line: a straight ramp from the disc to the basket and beyond. */
 const groundAt = (v: number, s: PuttSetup) => (s.distance > 0 ? (s.rise * v) / s.distance : 0);
 
-export function resolvePutt(read: Extract<SwipeRead, { cancel: false }>, setup: PuttSetup, rng: Rng, cfg: Config): PuttResult {
+export function resolvePutt(read: Extract<SwipeRead, { cancel: false }>, setup: PuttSetup, rng: Rng, cfg: Config, physics = PUTT_PHYSICS): PuttResult {
   const spitRoll = rng();
   const spitDist = rng();
   // Release wobble: nobody is a machine. It grows with distance past the "circle", so
@@ -189,6 +201,8 @@ export function resolvePutt(read: Extract<SwipeRead, { cancel: false }>, setup: 
   const reach = Math.max(0, (setup.distance - cfg.puttWobbleFromFt) / 30);
   const aimWobble = (rng() * 2 - 1) * cfg.puttWobbleDeg * DEG * reach;
   const powerWobble = 1 + (rng() * 2 - 1) * cfg.puttPowerWobble * reach;
+  // v2 only: one more roll, for which way a band hit kicks. v1 must draw exactly as it always did.
+  const bounceRoll = physics >= 2 ? rng() : 0;
   const th = cfg.puttLaunchDeg * DEG;
   const speed = puttLaunchSpeed(read.power * powerWobble, cfg);
   let vf = speed * Math.cos(th);
@@ -225,7 +239,9 @@ export function resolvePutt(read: Extract<SwipeRead, { cancel: false }>, setup: 
       const sp = Math.hypot(vf, vz, vu);
       atBasket = { h: hc, u: uc, speed: sp };
       const au = Math.abs(uc);
-      if (au <= cfg.chainHalfWidth && hc >= cfg.basketCatchLow && hc <= cfg.basketCatchHigh) {
+      if (physics >= 2) {
+        outcome = basketV2(au, hc, sp / idealArrivalSpeed(D, setup.rise, cfg), spitRoll, cfg);
+      } else if (au <= cfg.chainHalfWidth && hc >= cfg.basketCatchLow && hc <= cfg.basketCatchHigh) {
         // "Too hard" is relative to a well-weighted putt from this distance.
         const ratio = sp / idealArrivalSpeed(D, setup.rise, cfg);
         const offCentre = au > cfg.centerHalfWidth;
@@ -243,7 +259,7 @@ export function resolvePutt(read: Extract<SwipeRead, { cancel: false }>, setup: 
       }
       path.push({ u: uc, v: D, h: hc + setup.rise, t: t - DT * (1 - f) });
 
-      if (outcome === 'chains') {
+      if (outcome === 'chains' || outcome === 'rim') {
         // Drop into the tray.
         rest = { u: 0, v: D };
         path.push({ u: 0, v: D, h: setup.rise + cfg.basketCatchLow - 0.6, t: t + 0.25 });
@@ -252,6 +268,14 @@ export function resolvePutt(read: Extract<SwipeRead, { cancel: false }>, setup: 
       if (outcome === 'cage' || outcome === 'short') {
         rest = { u: uc * 1.5, v: D - 1.5 };
         path.push({ u: rest.u, v: rest.v, h: groundAt(rest.v, setup), t: t + 0.35 });
+        break;
+      }
+      if (outcome === 'band') {
+        // Clanged off the top band: it drops close by, kicked forward or back.
+        const side = (uc >= 0 ? 1 : -1) * (0.6 + spitDist * 1.6);
+        const away = 1 + spitDist * 2.5;
+        rest = { u: side, v: D + (bounceRoll < 0.45 ? away : -away) };
+        path.push({ u: rest.u, v: rest.v, h: groundAt(rest.v, setup), t: t + 0.45 });
         break;
       }
       if (outcome === 'spit') {
@@ -277,5 +301,61 @@ export function resolvePutt(read: Extract<SwipeRead, { cancel: false }>, setup: 
     if (i % 2 === 0) path.push({ u, v, h, t });
   }
 
-  return { outcome: outcome ?? 'short', made: outcome === 'chains', atBasket, rest, path };
+  return { outcome: outcome ?? 'short', made: outcome === 'chains' || outcome === 'rim', atBasket, rest, path };
+}
+
+const smooth = (a: number, b: number, x: number) => {
+  const t = clamp((x - a) / (b - a), 0, 1);
+  return t * t * (3 - 2 * t);
+};
+
+/** Physics v2 at the basket: what a putt that arrives at height h, |u| off centre, `ratio` times a well-weighted putt's speed, does. */
+export function basketChancesV2(au: number, h: number, ratio: number, cfg: Config): { zone: 'chains' | 'edge' | 'rim' | 'band' | 'none'; inChance: number } {
+  const lo = cfg.basketCatchLow;
+  const hi = cfg.basketCatchHigh;
+  const hw = cfg.chainHalfWidth;
+  if (h >= lo && h <= hi && au <= hw) {
+    const e = au / hw; // 0 dead centre .. 1 the outer chains
+    // Clipping the edge of the chains: the faster it is, the more likely it cuts through.
+    let risk = smooth(0.4, 1, e) * (0.15 + 0.75 * Math.max(0, ratio - 0.9));
+    // High in the chains, up by the band: less chain above to stop it.
+    risk += h > hi - 0.45 ? 0.3 * ((h - (hi - 0.45)) / 0.45) * (0.4 + e) : 0;
+    // A rocket can push through even dead centre.
+    risk += ratio > cfg.blowThroughRatio ? (ratio - cfg.blowThroughRatio) * 2.2 * (0.3 + e) : 0;
+    // A putt dying into the chains just drops.
+    if (ratio < 0.92) risk *= 0.45;
+    return { zone: 'chains', inChance: 1 - clamp(risk, 0, 0.92) };
+  }
+  if (h >= lo && h <= hi && au <= hw + 0.22) {
+    // Brushing the outer chains: sometimes they wrap it up.
+    return { zone: 'edge', inChance: 0.22 * (1 - (au - hw) / 0.22) * (ratio < 1 ? 1 : 0.5) };
+  }
+  if (h < lo && h >= lo - 0.3 && au <= cfg.cageHalfWidth) {
+    // Off the tray rim: higher, softer and more central pops in more often.
+    return { zone: 'rim', inChance: 0.35 * (1 - au / cfg.cageHalfWidth) * ((h - (lo - 0.3)) / 0.3) * (ratio < 1.05 ? 1 : 0.4) };
+  }
+  if (h > hi && h <= hi + 0.25 && au <= hw + 0.05) {
+    // Off the top band: mostly bounces away, now and then drops into the chains.
+    return { zone: 'band', inChance: ratio < 1 ? 0.18 : 0.06 };
+  }
+  return { zone: 'none', inChance: 0 };
+}
+
+function basketV2(au: number, h: number, ratio: number, roll: number, cfg: Config): PuttOutcome {
+  const { zone, inChance } = basketChancesV2(au, h, ratio, cfg);
+  const made = roll < inChance;
+  switch (zone) {
+    case 'chains':
+      return made ? 'chains' : 'spit';
+    case 'edge':
+      return made ? 'chains' : 'wide';
+    case 'rim':
+      return made ? 'rim' : 'cage';
+    case 'band':
+      return made ? 'chains' : 'band';
+  }
+  if (au <= cfg.cageHalfWidth && h < cfg.basketCatchLow && h >= cfg.cageBottom) return 'cage';
+  if (au <= cfg.cageHalfWidth && h < cfg.cageBottom) return 'short';
+  if (au <= cfg.cageHalfWidth && h > cfg.basketCatchHigh) return 'over';
+  return 'wide';
 }

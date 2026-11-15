@@ -35,7 +35,7 @@ export function chainRadiusAt(h: number): number {
   return lerp(BASKET.chainBottomR, BASKET.chainTopR, f);
 }
 
-export type HitKind = 'chains' | 'spit' | 'tray' | 'pole' | 'graze';
+export type HitKind = 'chains' | 'spit' | 'tray' | 'pole' | 'band' | 'graze';
 
 export interface PuttHit {
   /** Time on the anim clock. */
@@ -91,13 +91,23 @@ export function animatePutt(res: PuttResult, setup: PuttSetup, cfg: Config): Put
   }
 
   const kind: HitKind =
-    res.outcome === 'chains' ? 'chains' : res.outcome === 'spit' ? 'spit' : res.outcome === 'cage' && at.h >= BASKET.trayFloor - 0.15 ? 'tray' : 'pole';
+    res.outcome === 'chains'
+      ? 'chains'
+      : res.outcome === 'spit'
+        ? 'spit'
+        : res.outcome === 'band'
+          ? 'band'
+          : res.outcome === 'rim' || (res.outcome === 'cage' && at.h >= BASKET.trayFloor - 0.15)
+            ? 'tray'
+            : 'pole';
   const au = Math.abs(at.u);
   // How far in front of the pole the disc's leading edge meets something.
   let depth: number;
   if (kind === 'chains' || kind === 'spit') {
     const rc = chainRadiusAt(at.h);
     depth = Math.sqrt(Math.max(0, rc * rc - au * au)) + BASKET.discR * 0.5;
+  } else if (kind === 'band') {
+    depth = Math.sqrt(Math.max(0, BASKET.bandR ** 2 - Math.min(au, BASKET.bandR - 0.05) ** 2)) + BASKET.discR * 0.5;
   } else if (kind === 'tray') {
     depth = Math.sqrt(Math.max(0, BASKET.trayR ** 2 - Math.min(au, BASKET.trayR - 0.05) ** 2)) + BASKET.discR;
   } else {
@@ -116,25 +126,39 @@ export function animatePutt(res: PuttResult, setup: PuttSetup, cfg: Config): Put
     t += dt;
     path.push({ u, v, h: hb + rise, t, tilt });
   };
-  const hit: PuttHit = { t: p0.t, kind, u: p0.u, h: hb0, force: kind === 'spit' ? force * 1.2 : kind === 'chains' ? force : 0.8 };
+  const hit: PuttHit = { t: p0.t, kind, u: p0.u, h: hb0, force: kind === 'spit' ? force * 1.2 : kind === 'chains' ? force : kind === 'band' ? 0.5 : 0.8 };
 
-  if (kind === 'chains') {
-    // The front chains give and swallow the disc's speed...
-    const pushV = Math.min(D - 0.15, p0.v + 0.22 + 0.22 * force);
-    const u1 = p0.u * 0.7;
-    const h1 = hb0 - 0.12;
-    put(u1, pushV, h1, 0.05 + 0.04 * force, 0.1);
-    // ...it hangs for a beat, then slides down through them into the tray.
+  if (res.made) {
+    // Settle in the tray: off to one side so the pole doesn't hide it.
     const restU = clamp(p0.u * 0.45, -0.4, 0.4);
     const restV = D - 0.5;
     const floor = BASKET.trayFloor + 0.2;
+    let u1: number;
+    let v1: number;
+    let h1: number;
+    if (kind === 'chains') {
+      // The front chains give and swallow the disc's speed, it hangs for a beat...
+      v1 = Math.min(D - 0.15, p0.v + 0.22 + 0.22 * force);
+      u1 = p0.u * 0.7;
+      h1 = hb0 - 0.12;
+      put(u1, v1, h1, 0.05 + 0.04 * force, 0.1);
+      put(u1, v1, h1 - 0.04, 0.06, 0.15);
+      h1 -= 0.04;
+    } else {
+      // Clipped the rim: it pops up and over the lip.
+      u1 = p0.u * 0.8;
+      v1 = Math.min(D - 0.3, p0.v + 0.45);
+      h1 = BASKET.trayRim + 0.35;
+      put(lerp(p0.u, u1, 0.5), lerp(p0.v, v1, 0.5), h1 + 0.06, 0.09, 0.4);
+      put(u1, v1, h1, 0.06, 0.45);
+    }
+    // ...then slides down into the tray.
     const fall = 0.3 + 0.07 * Math.max(0, h1 - BASKET.chainBottom);
-    put(u1, pushV, h1 - 0.04, 0.06, 0.15);
     const steps = 8;
     for (let i = 1; i <= steps; i++) {
       const s = i / steps;
       const e = 1 - (1 - s) * (1 - s); // sideways settles early
-      put(lerp(u1, restU, e), lerp(pushV, restV, e), lerp(h1 - 0.04, floor, s * s), fall / steps, 0.15 + 0.3 * s + 0.08 * Math.sin(s * 9));
+      put(lerp(u1, restU, e), lerp(v1, restV, e), lerp(h1, floor, s * s), fall / steps, 0.15 + 0.3 * s + 0.08 * Math.sin(s * 9));
     }
     // A small rattle on the tray floor, then it sits.
     put(restU, restV, floor + 0.09, 0.06, 0.55);
@@ -158,6 +182,12 @@ export function animatePutt(res: PuttResult, setup: PuttSetup, cfg: Config): Put
     v1 = blow ? D + BASKET.chainTopR + 0.2 : D - 0.15;
     h1 = hb0 - 0.3;
     put(u1, v1, h1, 0.11, 0.35);
+  } else if (kind === 'band') {
+    // Clang off the band: up, then away to front or back.
+    u1 = p0.u * 1.1;
+    v1 = rest.v > D ? D + 0.6 : p0.v - 0.3;
+    h1 = hb0 + 0.3;
+    put(u1, v1, h1, 0.1, 0.4);
   } else {
     // Clang: it pops back off the tray or pole.
     u1 = p0.u * 1.15;

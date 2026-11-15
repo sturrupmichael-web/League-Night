@@ -80,7 +80,7 @@ export class ReplayScene implements Scene {
       const proj = new PuttProjector(terrain, rp.lie, c.hole.basket);
       const w = windAt(c.wind ?? CALM, 0, 0, this.cfg.windScale);
       const setup = { distance: proj.distance, rise: proj.rise, crosswind: proj.crosswind(w) };
-      const res = resolvePutt(rp.read, setup, makeRng(rp.seed), this.cfg);
+      const res = resolvePutt(rp.read, setup, makeRng(rp.seed), this.cfg, rp.pv ?? 1);
       const anim = animatePutt(res, setup, this.cfg);
       this.live = { kind: 'putt', proj, anim, end: anim.end, made: res.made, color, hitDone: false };
     }
@@ -122,7 +122,7 @@ export class ReplayScene implements Scene {
       L.hitDone = true;
       const k = L.anim.hit.kind;
       if (k === 'chains' || k === 'spit') sfx.play('chains');
-      else if (k === 'tray' || k === 'pole') sfx.play('clank');
+      else if (k === 'tray' || k === 'pole' || k === 'band') sfx.play('clank');
     }
     if (L.kind === 'throw') {
       const p = sample(L.path, Math.min(this.t, L.end));

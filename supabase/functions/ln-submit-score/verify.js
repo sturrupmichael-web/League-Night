@@ -84,6 +84,7 @@ var e = {
 	puttWobbleDeg: 1.6,
 	puttPowerWobble: .06,
 	puttGuideFt: 6,
+	puttTapGuardS: .25,
 	chainHalfWidth: .85,
 	centerHalfWidth: .35,
 	cageHalfWidth: 1.15,
@@ -94,6 +95,7 @@ var e = {
 	minZoom: .2,
 	maxZoom: 1.6,
 	maxPullPx: 64,
+	maxViewH: 400,
 	grabRadiusPx: 22,
 	cancelPullPx: 8,
 	previewFraction: .3
@@ -27213,7 +27215,178 @@ function k(e, t, n) {
 		history: [...e.history, { ...e.lie }]
 	};
 }
-var A = 5, j = 140, M = 90, N = class {
+var A = 1 / 120;
+function j(e, t) {
+	return t.puttSpeedFull * Math.sqrt(Math.max(0, e));
+}
+function M(e, t, n, r) {
+	let i = r.puttLaunchDeg * v, a = r.puttReleaseHeight + e * Math.tan(i) - (n + t);
+	if (a <= 0) return 1.3;
+	let o = y * e * e / (2 * Math.cos(i) ** 2 * a);
+	return Math.min(1.3, o / r.puttSpeedFull ** 2);
+}
+function N(e, t, n) {
+	return M(e, t, (n.basketCatchLow + n.basketCatchHigh) / 2, n);
+}
+function P(e, t, n) {
+	let r = j(N(e, t, n), n), i = (n.basketCatchLow + n.basketCatchHigh) / 2 + t;
+	return Math.sqrt(Math.max(1, r * r + 2 * y * (n.puttReleaseHeight - i)));
+}
+var F = (e, t) => t.distance > 0 ? t.rise * e / t.distance : 0;
+function I(e, t, n, r, i = 2) {
+	let a = n(), o = n(), s = Math.max(0, (t.distance - r.puttWobbleFromFt) / 30), c = (n() * 2 - 1) * r.puttWobbleDeg * v * s, l = 1 + (n() * 2 - 1) * r.puttPowerWobble * s, u = i >= 2 ? n() : 0, d = r.puttLaunchDeg * v, f = j(e.power * l, r), p = f * Math.cos(d), m = f * Math.sin(d), h = p * Math.tan(e.aim + c), g = e.bend * r.puttBendAccel, _ = (t.crosswind ?? 0) * r.puttWindDrift, b = 0, S = 0, C = r.puttReleaseHeight, w = 0, T = [{
+		u: b,
+		v: S,
+		h: C,
+		t: w
+	}], E = t.distance, D = null, O = null, k = {
+		u: 0,
+		v: 0
+	};
+	for (let e = 0; e < 2e3; e++) {
+		let n = S, s = C, c = b;
+		if (m -= y * A, h += (g + _) * A, b += h * A, S += p * A, C += m * A, w += A, !D && n < E && S >= E) {
+			let e = (E - n) / Math.max(1e-9, S - n), l = s + (C - s) * e - t.rise, d = c + (b - c) * e, f = Math.hypot(p, m, h);
+			D = {
+				h: l,
+				u: d,
+				speed: f
+			};
+			let g = Math.abs(d);
+			if (i >= 2) O = z(g, l, f / P(E, t.rise, r), a, r);
+			else if (g <= r.chainHalfWidth && l >= r.basketCatchLow && l <= r.basketCatchHigh) {
+				let e = f / P(E, t.rise, r), n = g > r.centerHalfWidth, i = x((e - r.spitRatio) * 8, 0, .9);
+				O = e >= r.blowThroughRatio && n || n && a < i ? "spit" : "chains";
+			} else O = g <= r.cageHalfWidth && l < r.basketCatchLow && l >= r.cageBottom ? "cage" : g <= r.cageHalfWidth && l < r.cageBottom ? "short" : g <= r.cageHalfWidth && l > r.basketCatchHigh ? "over" : "wide";
+			if (T.push({
+				u: d,
+				v: E,
+				h: l + t.rise,
+				t: w - A * (1 - e)
+			}), O === "chains" || O === "rim") {
+				k = {
+					u: 0,
+					v: E
+				}, T.push({
+					u: 0,
+					v: E,
+					h: t.rise + r.basketCatchLow - .6,
+					t: w + .25
+				});
+				break;
+			}
+			if (O === "cage" || O === "short") {
+				k = {
+					u: d * 1.5,
+					v: E - 1.5
+				}, T.push({
+					u: k.u,
+					v: k.v,
+					h: F(k.v, t),
+					t: w + .35
+				});
+				break;
+			}
+			if (O === "band") {
+				let e = (d >= 0 ? 1 : -1) * (.6 + o * 1.6), n = 1 + o * 2.5;
+				k = {
+					u: e,
+					v: E + (u < .45 ? n : -n)
+				}, T.push({
+					u: k.u,
+					v: k.v,
+					h: F(k.v, t),
+					t: w + .45
+				});
+				break;
+			}
+			if (O === "spit") {
+				let e = 2 + o * 5;
+				k = {
+					u: (d >= 0 ? 1 : -1) * (1 + o * 3),
+					v: E + (f / P(E, t.rise, r) >= r.blowThroughRatio ? e : -e * .5)
+				}, T.push({
+					u: k.u,
+					v: k.v,
+					h: F(k.v, t),
+					t: w + .4
+				});
+				break;
+			}
+		}
+		let l = F(S, t);
+		if (C <= l) {
+			O ||= "short";
+			let e = Math.min(2, p * .04);
+			k = {
+				u: b,
+				v: S + e
+			}, T.push({
+				u: b,
+				v: S,
+				h: l,
+				t: w
+			}), T.push({
+				u: k.u,
+				v: k.v,
+				h: F(k.v, t),
+				t: w + .2
+			});
+			break;
+		}
+		e % 2 == 0 && T.push({
+			u: b,
+			v: S,
+			h: C,
+			t: w
+		});
+	}
+	return {
+		outcome: O ?? "short",
+		made: O === "chains" || O === "rim",
+		atBasket: D,
+		rest: k,
+		path: T
+	};
+}
+var L = (e, t, n) => {
+	let r = x((n - e) / (t - e), 0, 1);
+	return r * r * (3 - 2 * r);
+};
+function R(e, t, n, r) {
+	let i = r.basketCatchLow, a = r.basketCatchHigh, o = r.chainHalfWidth;
+	if (t >= i && t <= a && e <= o) {
+		let i = e / o, s = L(.4, 1, i) * (.15 + .75 * Math.max(0, n - .9));
+		return s += t > a - .45 ? .3 * ((t - (a - .45)) / .45) * (.4 + i) : 0, s += n > r.blowThroughRatio ? (n - r.blowThroughRatio) * 2.2 * (.3 + i) : 0, n < .92 && (s *= .45), {
+			zone: "chains",
+			inChance: 1 - x(s, 0, .92)
+		};
+	}
+	return t >= i && t <= a && e <= o + .22 ? {
+		zone: "edge",
+		inChance: .22 * (1 - (e - o) / .22) * (n < 1 ? 1 : .5)
+	} : t < i && t >= i - .3 && e <= r.cageHalfWidth ? {
+		zone: "rim",
+		inChance: .35 * (1 - e / r.cageHalfWidth) * ((t - (i - .3)) / .3) * (n < 1.05 ? 1 : .4)
+	} : t > a && t <= a + .25 && e <= o + .05 ? {
+		zone: "band",
+		inChance: n < 1 ? .18 : .06
+	} : {
+		zone: "none",
+		inChance: 0
+	};
+}
+function z(e, t, n, r, i) {
+	let { zone: a, inChance: o } = R(e, t, n, i), s = r < o;
+	switch (a) {
+		case "chains": return s ? "chains" : "spit";
+		case "edge": return s ? "chains" : "wide";
+		case "rim": return s ? "rim" : "cage";
+		case "band": return s ? "chains" : "band";
+	}
+	return e <= i.cageHalfWidth && t < i.basketCatchLow && t >= i.cageBottom ? "cage" : e <= i.cageHalfWidth && t < i.cageBottom ? "short" : e <= i.cageHalfWidth && t > i.basketCatchHigh ? "over" : "wide";
+}
+var B = 5, V = 140, H = 90, U = class {
 	terrain;
 	lie;
 	basket;
@@ -27245,173 +27418,52 @@ var A = 5, j = 140, M = 90, N = class {
 	}
 	project(e, t, n) {
 		if (t < .5) return null;
-		let r = j / t;
+		let r = V / t;
 		return {
-			x: M + e * r,
-			y: 104 + (A - n) * r,
+			x: H + e * r,
+			y: 104 + (B - n) * r,
 			s: r
 		};
 	}
 	crosswind(e) {
 		return e.x * this.r.x + e.y * this.r.y;
 	}
-}, P = 1 / 120;
-function F(e, t) {
-	return t.puttSpeedFull * Math.sqrt(Math.max(0, e));
-}
-function I(e, t, n, r) {
-	let i = r.puttLaunchDeg * v, a = r.puttReleaseHeight + e * Math.tan(i) - (n + t);
-	if (a <= 0) return 1.3;
-	let o = y * e * e / (2 * Math.cos(i) ** 2 * a);
-	return Math.min(1.3, o / r.puttSpeedFull ** 2);
-}
-function L(e, t, n) {
-	return I(e, t, (n.basketCatchLow + n.basketCatchHigh) / 2, n);
-}
-function R(e, t, n) {
-	let r = F(L(e, t, n), n), i = (n.basketCatchLow + n.basketCatchHigh) / 2 + t;
-	return Math.sqrt(Math.max(1, r * r + 2 * y * (n.puttReleaseHeight - i)));
-}
-var z = (e, t) => t.distance > 0 ? t.rise * e / t.distance : 0;
-function B(e, t, n, r) {
-	let i = n(), a = n(), o = Math.max(0, (t.distance - r.puttWobbleFromFt) / 30), s = (n() * 2 - 1) * r.puttWobbleDeg * v * o, c = 1 + (n() * 2 - 1) * r.puttPowerWobble * o, l = r.puttLaunchDeg * v, u = F(e.power * c, r), d = u * Math.cos(l), f = u * Math.sin(l), p = d * Math.tan(e.aim + s), m = e.bend * r.puttBendAccel, h = (t.crosswind ?? 0) * r.puttWindDrift, g = 0, _ = 0, b = r.puttReleaseHeight, S = 0, C = [{
-		u: g,
-		v: _,
-		h: b,
-		t: S
-	}], w = t.distance, T = null, E = null, D = {
-		u: 0,
-		v: 0
-	};
-	for (let e = 0; e < 2e3; e++) {
-		let n = _, o = b, s = g;
-		if (f -= y * P, p += (m + h) * P, g += p * P, _ += d * P, b += f * P, S += P, !T && n < w && _ >= w) {
-			let e = (w - n) / Math.max(1e-9, _ - n), c = o + (b - o) * e - t.rise, l = s + (g - s) * e, u = Math.hypot(d, f, p);
-			T = {
-				h: c,
-				u: l,
-				speed: u
-			};
-			let m = Math.abs(l);
-			if (m <= r.chainHalfWidth && c >= r.basketCatchLow && c <= r.basketCatchHigh) {
-				let e = u / R(w, t.rise, r), n = m > r.centerHalfWidth, a = x((e - r.spitRatio) * 8, 0, .9);
-				E = e >= r.blowThroughRatio && n || n && i < a ? "spit" : "chains";
-			} else E = m <= r.cageHalfWidth && c < r.basketCatchLow && c >= r.cageBottom ? "cage" : m <= r.cageHalfWidth && c < r.cageBottom ? "short" : m <= r.cageHalfWidth && c > r.basketCatchHigh ? "over" : "wide";
-			if (C.push({
-				u: l,
-				v: w,
-				h: c + t.rise,
-				t: S - P * (1 - e)
-			}), E === "chains") {
-				D = {
-					u: 0,
-					v: w
-				}, C.push({
-					u: 0,
-					v: w,
-					h: t.rise + r.basketCatchLow - .6,
-					t: S + .25
-				});
-				break;
-			}
-			if (E === "cage" || E === "short") {
-				D = {
-					u: l * 1.5,
-					v: w - 1.5
-				}, C.push({
-					u: D.u,
-					v: D.v,
-					h: z(D.v, t),
-					t: S + .35
-				});
-				break;
-			}
-			if (E === "spit") {
-				let e = 2 + a * 5;
-				D = {
-					u: (l >= 0 ? 1 : -1) * (1 + a * 3),
-					v: w + (u / R(w, t.rise, r) >= r.blowThroughRatio ? e : -e * .5)
-				}, C.push({
-					u: D.u,
-					v: D.v,
-					h: z(D.v, t),
-					t: S + .4
-				});
-				break;
-			}
-		}
-		let c = z(_, t);
-		if (b <= c) {
-			E ||= "short";
-			let e = Math.min(2, d * .04);
-			D = {
-				u: g,
-				v: _ + e
-			}, C.push({
-				u: g,
-				v: _,
-				h: c,
-				t: S
-			}), C.push({
-				u: D.u,
-				v: D.v,
-				h: z(D.v, t),
-				t: S + .2
-			});
-			break;
-		}
-		e % 2 == 0 && C.push({
-			u: g,
-			v: _,
-			h: b,
-			t: S
-		});
-	}
-	return {
-		outcome: E ?? "short",
-		made: E === "chains",
-		atBasket: T,
-		rest: D,
-		path: C
-	};
-}
-// src/sim/discs.ts
-var V = (e) => e.fade + e.turn, H = 1 / 120;
-function U(e, t) {
+}, W = (e) => e.fade + e.turn, G = 1 / 120;
+function K(e, t) {
 	let n = e === "right" ? 1 : -1;
 	return t === "backhand" ? n : -n;
 }
-function W(e) {
-	return x((V(e) - 1.5) / 2, -1, 1);
+function q(e) {
+	return x((W(e) - 1.5) / 2, -1, 1);
 }
-function G(e, t) {
+function J(e, t) {
 	return e === "hammer" ? t.launchPitchHammerDeg * v : e === "forehand" ? t.launchPitchForehandDeg * v : t.launchPitchBackhandDeg * v;
 }
-function K(e, t) {
+function Y(e, t) {
 	return x((e - 1) / Math.max(1e-6, t.maxPower - 1), 0, 1);
 }
-function q(e, t, n, r, i) {
-	let { terrain: a } = n, o = e.style === "hammer", s = U(e.hand, e.style), c = x(e.power, 0, i.maxPower), l = K(c, i), u = g(r), d = g(r), f = Math.abs(g(r)), p = e.aim + l * u * i.redlineAimWobbleDeg * v, m = x(e.release, -1, 1) * i.releaseBankDeg * v + l * d * i.redlineBankWobbleDeg * v, h = m, _ = t.turn - l * f * i.redlineExtraTurn, b = o ? 0 : i.matchBonus * Math.max(0, 1 - Math.abs(e.release - W(t))), S = o ? i.hammerPowerMul : e.style === "forehand" ? i.forehandPowerMul : 1, C = i.armSpeed * c * S * (1 + b) * (e.armMul ?? 1), T = G(e.style, i), E = e.origin.x, D = e.origin.y, O = a.height(E, D) + i.releaseHeight, k = Math.sin(p) * C * Math.cos(T), A = Math.cos(p) * C * Math.cos(T), j = C * Math.sin(T), M = 0, N = i.ratedSpeedBase + i.ratedSpeedPerSpeed * t.speed, P = i.glideBase + i.glidePer * t.glide, F = 1 / (1 + i.liftSpeedPenalty * (t.speed - 1)), I = i.drag * (1 - i.dragSpeedRelief * (t.speed - 1) / 13), L = i.maxBankDeg * v, R = o ? i.hammerLift : 1, z = 0, B = [], V = !1, q = [{
+function X(e, t, n, r, i) {
+	let { terrain: a } = n, o = e.style === "hammer", s = K(e.hand, e.style), c = x(e.power, 0, i.maxPower), l = Y(c, i), u = g(r), d = g(r), f = Math.abs(g(r)), p = e.aim + l * u * i.redlineAimWobbleDeg * v, m = x(e.release, -1, 1) * i.releaseBankDeg * v + l * d * i.redlineBankWobbleDeg * v, h = m, _ = t.turn - l * f * i.redlineExtraTurn, b = o ? 0 : i.matchBonus * Math.max(0, 1 - Math.abs(e.release - q(t))), S = o ? i.hammerPowerMul : e.style === "forehand" ? i.forehandPowerMul : 1, C = i.armSpeed * c * S * (1 + b) * (e.armMul ?? 1), T = J(e.style, i), E = e.origin.x, D = e.origin.y, O = a.height(E, D) + i.releaseHeight, k = Math.sin(p) * C * Math.cos(T), A = Math.cos(p) * C * Math.cos(T), j = C * Math.sin(T), M = 0, N = i.ratedSpeedBase + i.ratedSpeedPerSpeed * t.speed, P = i.glideBase + i.glidePer * t.glide, F = 1 / (1 + i.liftSpeedPenalty * (t.speed - 1)), I = i.drag * (1 - i.dragSpeedRelief * (t.speed - 1) / 13), L = i.maxBankDeg * v, R = o ? i.hammerLift : 1, z = 0, B = [], V = !1, H = [{
 		x: E,
 		y: D,
 		z: O,
 		t: M
-	}], J = 0, Y = null;
-	for (; !Y;) {
+	}], U = 0, W = null;
+	for (; !W;) {
 		let e = w(n.wind, M, i.gustAmp, i.windScale), c = k - e.x, l = A - e.y, u = Math.hypot(c, l) || 1e-6, d = Math.hypot(u, j), f = Math.hypot(Math.hypot(k, A), j), p = f + (d - f) * i.windLiftFactor, h = p / N;
-		if (o) m += i.hammerRollDeg * v * H;
+		if (o) m += i.hammerRollDeg * v * G;
 		else {
 			let e = i.turnRate * -_ * Math.min(i.turnCap, Math.max(0, h - i.turnThreshold)), n = i.fadeRate * (t.fade + i.baseStability) * Math.max(0, i.fadeThreshold - h);
-			m += (e - n) * H;
+			m += (e - n) * G;
 		}
 		m = x(m, -L, L);
-		let g = i.lift * P * F * p * p * Math.min(1, h) ** +i.underpowerLiftExp * R, b = l / u * s, S = -c / u * s, C = g * Math.sin(m) * i.lateralK, T = -I * d * c + C * b, U = -I * d * l + C * S, W = -y - I * d * j + g * Math.cos(m);
-		k += T * H, A += U * H, j += W * H;
-		let G = E, K = D, X = O;
-		if (E += k * H, D += A * H, O += j * H, M += H, J++, n.basket) {
-			let e = n.basket, t = ee(G, K, E, D, e.x, e.y), r = O - a.height(e.x, e.y);
+		let g = i.lift * P * F * p * p * Math.min(1, h) ** +i.underpowerLiftExp * R, b = l / u * s, S = -c / u * s, C = g * Math.sin(m) * i.lateralK, T = -I * d * c + C * b, K = -I * d * l + C * S, q = -y - I * d * j + g * Math.cos(m);
+		k += T * G, A += K * G, j += q * G;
+		let J = E, Y = D, X = O;
+		if (E += k * G, D += A * G, O += j * G, M += G, U++, n.basket) {
+			let e = n.basket, t = ee(J, Y, E, D, e.x, e.y), r = O - a.height(e.x, e.y);
 			if (t.dist < i.basketRadius && r > i.basketCatchLow && r < i.basketCatchHigh) {
-				V = !0, E = e.x, D = e.y, O = a.height(e.x, e.y) + i.basketCatchLow, Y = {
+				V = !0, E = e.x, D = e.y, O = a.height(e.x, e.y) + i.basketCatchLow, W = {
 					x: E,
 					y: D,
 					z: O,
@@ -27421,7 +27473,7 @@ function q(e, t, n, r, i) {
 					vz: 0,
 					bank: 0,
 					descent: Math.PI / 2
-				}, q.push({
+				}, H.push({
 					x: E,
 					y: D,
 					z: O,
@@ -27439,10 +27491,10 @@ function q(e, t, n, r, i) {
 		}
 		let Z = a.height(E, D);
 		if (O <= Z || M >= i.maxFlightTime) {
-			let e = X - a.height(G, K), t = O - Z, n = e - t > 1e-9 ? x(e / (e - t), 0, 1) : 1;
-			E = G + (E - G) * n, D = K + (D - K) * n, M -= H * (1 - n), O = a.height(E, D);
+			let e = X - a.height(J, Y), t = O - Z, n = e - t > 1e-9 ? x(e / (e - t), 0, 1) : 1;
+			E = J + (E - J) * n, D = Y + (D - Y) * n, M -= G * (1 - n), O = a.height(E, D);
 			let r = Math.hypot(k, A);
-			Y = {
+			W = {
 				x: E,
 				y: D,
 				z: O,
@@ -27452,7 +27504,7 @@ function q(e, t, n, r, i) {
 				vz: j,
 				bank: m,
 				descent: Math.atan2(Math.max(0, -j), r)
-			}, q.push({
+			}, H.push({
 				x: E,
 				y: D,
 				z: O,
@@ -27460,7 +27512,7 @@ function q(e, t, n, r, i) {
 			});
 			break;
 		}
-		J % 2 == 0 && q.push({
+		U % 2 == 0 && H.push({
 			x: E,
 			y: D,
 			z: O,
@@ -27468,8 +27520,8 @@ function q(e, t, n, r, i) {
 		});
 	}
 	return {
-		path: q,
-		landing: Y,
+		path: H,
+		landing: W,
 		holed: V,
 		treeHits: z,
 		treeHitTimes: B,
@@ -27488,8 +27540,8 @@ function ee(e, t, n, r, i, a) {
 	};
 }
 // src/sim/ground.ts
-var J = 1 / 60, Y = .6, X = 8, Z = (e) => e === "water" || e === "ob";
-function te(e, t) {
+var Z = 1 / 60, te = .6, ne = 8, Q = (e) => e === "water" || e === "ob";
+function re(e, t) {
 	switch (e) {
 		case "rough": return t.frictionRough;
 		case "green": return t.frictionGreen;
@@ -27497,14 +27549,14 @@ function te(e, t) {
 		default: return t.frictionFairway;
 	}
 }
-function Q(e, t, n) {
-	for (let n = t.length - 1; n >= 0; n--) if (!Z(e.surface(t[n].x, t[n].y))) return {
+function ie(e, t, n) {
+	for (let n = t.length - 1; n >= 0; n--) if (!Q(e.surface(t[n].x, t[n].y))) return {
 		x: t[n].x,
 		y: t[n].y
 	};
 	return n;
 }
-function ne(e, t, n, r, i, a) {
+function ae(e, t, n, r, i, a) {
 	let o = e.landing, s = [], c = () => e.path.concat(s), l = i(), u = i(), d = i(), f = i();
 	if (e.holed) return {
 		kind: "holed",
@@ -27522,7 +27574,7 @@ function ne(e, t, n, r, i, a) {
 		path: s
 	};
 	let p = o.x, m = o.y, h = o.vx, g = o.vy, _ = o.t, b = Math.hypot(h, g), S = r.surface(p, m), C = !1, w = (e) => {
-		let t = Q(r, c(), n);
+		let t = ie(r, c(), n);
 		return {
 			kind: e,
 			rest: {
@@ -27544,7 +27596,7 @@ function ne(e, t, n, r, i, a) {
 		h *= t, g *= t, b *= t;
 		let n = b * Math.tan(a.skipBounceDeg * v), i = r.height(p, m);
 		for (let e = 0; e < 600; e++) {
-			n -= y * J, p += h * J, m += g * J, i += n * J, _ += J;
+			n -= y * Z, p += h * Z, m += g * Z, i += n * Z, _ += Z;
 			let e = r.height(p, m);
 			if (i <= e) {
 				i = e, s.push({
@@ -27562,7 +27614,7 @@ function ne(e, t, n, r, i, a) {
 				t: _
 			});
 		}
-		if (S = r.surface(p, m), Z(S)) return w(S);
+		if (S = r.surface(p, m), Q(S)) return w(S);
 		h *= .6, g *= .6, b *= .6;
 	}
 	if (e.upsideDown) {
@@ -27636,26 +27688,26 @@ function ne(e, t, n, r, i, a) {
 	});
 	function k(e) {
 		let { x: t, y: i, t: o, vx: l, vy: u } = e, d = Math.hypot(l, u), f = r.surface(t, i), p = 0;
-		for (let n = 0; n * J < X; n++) {
+		for (let n = 0; n * Z < ne; n++) {
 			let n = Math.hypot(l, u);
-			if (n < Y) break;
-			let c = e.rolling ? a.rollFriction * (f === "rough" ? 3 : 1) : te(f, a);
+			if (n < te) break;
+			let c = e.rolling ? a.rollFriction * (f === "rough" ? 3 : 1) : re(f, a);
 			if (!isFinite(c)) break;
 			let m = r.gradient(t, i), h = -c * y * l / n - y * a.slopeK * m.x, g = -c * y * u / n - y * a.slopeK * m.y, _ = e.curve * (e.rolling ? 1 - n / Math.max(d, 1e-6) + .15 : 1);
 			h += _ * u, g += -_ * l;
-			let v = l + h * J, b = u + g * J;
+			let v = l + h * Z, b = u + g * Z;
 			if (v * l + b * u <= 0 && Math.hypot(m.x, m.y) < c) break;
 			l = v, u = b;
-			let x = t + l * J, S = i + u * J;
-			if (p += Math.hypot(x - t, S - i), t = x, i = S, o += J, s.push({
+			let x = t + l * Z, S = i + u * Z;
+			if (p += Math.hypot(x - t, S - i), t = x, i = S, o += Z, s.push({
 				x: t,
 				y: i,
 				z: r.height(t, i),
 				t: o
-			}), f = r.surface(t, i), Z(f) || f === "sand") break;
+			}), f = r.surface(t, i), Q(f) || f === "sand") break;
 		}
 		if (f === "water" || f === "ob") {
-			let e = Q(r, c(), n);
+			let e = ie(r, c(), n);
 			return {
 				kind: f,
 				rest: {
@@ -27687,8 +27739,8 @@ function ne(e, t, n, r, i, a) {
 	}
 }
 // src/sim/throw.ts
-function re(e, t, n, r, i) {
-	let a = h(r), o = q(e, t, n, a, i), s = ne(o, t, e.origin, n.terrain, a, i), c = o.path.concat(s.path), l = n.terrain.height(e.origin.x, e.origin.y);
+function oe(e, t, n, r, i) {
+	let a = h(r), o = X(e, t, n, a, i), s = ae(o, t, e.origin, n.terrain, a, i), c = o.path.concat(s.path), l = n.terrain.height(e.origin.x, e.origin.y);
 	return {
 		input: e,
 		discId: t.id,
@@ -27702,9 +27754,9 @@ function re(e, t, n, r, i) {
 	};
 }
 // src/net/verify.ts
-var ie = m, ae = .75, oe = (e, t) => _(e, t), $ = (e, t) => !!e && Math.hypot(e.x - t.x, e.y - t.y) <= ae;
-function se(e, t, n, r, i, a, o = 0) {
-	let s = [], c = oe(r, i), l = T(c, t), u = E(t.par, t.tee), d = 0, f = o, p = (e) => {
+var se = m, ce = .75, le = (e, t) => _(e, t), $ = (e, t) => !!e && Math.hypot(e.x - t.x, e.y - t.y) <= ce;
+function ue(e, t, n, r, i, a, o = 0) {
+	let s = [], c = le(r, i), l = T(c, t), u = E(t.par, t.tee), d = 0, f = o, p = (e) => {
 		d++;
 		for (let n = 0; n <= f; n++) if (_(c, t.id * 1e3 + d + n) === e) {
 			d += n, f -= n;
@@ -27723,7 +27775,7 @@ function se(e, t, n, r, i, a, o = 0) {
 		else if (r.kind === "throw" && r.replay?.t === "throw") {
 			let u = p(r.replay.seed);
 			r.replay.seed !== u && s.push(`throw ${e}: wrong seed`), $(r.replay.input.origin, i) || s.push(`throw ${e}: thrown from the wrong spot`);
-			let f = ie.find((e) => e.id === r.discId) ?? ie[0], m = re({
+			let f = se.find((e) => e.id === r.discId) ?? se[0], m = oe({
 				...r.replay.input,
 				origin: { ...i }
 			}, f, {
@@ -27735,12 +27787,17 @@ function se(e, t, n, r, i, a, o = 0) {
 		} else if (r.kind === "putt" && r.replay?.t === "putt") {
 			let u = p(r.replay.seed);
 			r.replay.seed !== u && s.push(`throw ${e}: wrong seed`), $(r.replay.lie, i) || s.push(`throw ${e}: putted from the wrong spot`);
-			let f = new N(n, i, t.basket), m = w(l, 0, 0, a.windScale), g = B(r.replay.read, {
+			let f = new U(n, i, t.basket), m = w(l, 0, 0, a.windScale), g = de(r.replay.pv);
+			if (g === 0) {
+				s.push(`throw ${e}: unknown putting physics`);
+				continue;
+			}
+			let _ = I(r.replay.read, {
 				distance: f.distance,
 				rise: f.rise,
 				crosswind: f.crosswind(m)
-			}, h(u), a), _ = f.toWorld(g.rest.u, g.rest.v), v = n.surface(_.x, _.y);
-			d = g.made, c = +(!g.made && (v === "water" || v === "ob")), o = g.made ? { ...t.basket } : c ? { ...i } : _;
+			}, h(u), a, g), v = f.toWorld(_.rest.u, _.rest.v), y = n.surface(v.x, v.y);
+			d = _.made, c = +(!_.made && (y === "water" || y === "ob")), o = _.made ? { ...t.basket } : c ? { ...i } : v;
 		} else {
 			s.push(`throw ${e}: no replay data`);
 			continue;
@@ -27757,9 +27814,12 @@ function se(e, t, n, r, i, a, o = 0) {
 		strokes: u.strokes
 	};
 }
+function de(e) {
+	return e === void 0 ? 1 : typeof e == "number" && Number.isInteger(e) && e >= 1 && e <= 2 ? e : 0;
+}
 // src/net/verifyRound.ts
-var ce = [9, 18];
-function le(t) {
+var fe = [9, 18];
+function pe(t) {
 	let n = [], r = t.settings, i = o.find((e) => e.id === r.courseId), a = r.mode ?? "casual", s = r.chaserId ?? "", l = {
 		courseId: r.courseId,
 		holes: t.order.length,
@@ -27774,7 +27834,7 @@ function le(t) {
 		par: 0,
 		mulligans: 0
 	};
-	ce.includes(r.length) || n.push("only 9 and 18 hole rounds go on the board"), (t.order.length !== r.length || t.card.length !== r.length) && n.push("the round is not finished"), t.order.forEach((e, t) => {
+	fe.includes(r.length) || n.push("only 9 and 18 hole rounds go on the board"), (t.order.length !== r.length || t.card.length !== r.length) && n.push("the round is not finished"), t.order.forEach((e, t) => {
 		e !== t % i.holes.length && n.push(`hole ${t + 1} is out of order`);
 	});
 	let d = u(e, c(s)), f = a === "casual" ? 3 : 0, m = 0, h = 0, g = 0;
@@ -27782,7 +27842,7 @@ function le(t) {
 		let a = i.holes[t.order[r] ?? -1];
 		if (!a) return;
 		h += a.par, g += Math.max(0, e.mulligans | 0);
-		let o = se(e.throws.map((e) => ({
+		let o = ue(e.throws.map((e) => ({
 			kind: e.kind,
 			n: e.n,
 			discId: e.discId,
@@ -27804,4 +27864,4 @@ function le(t) {
 		mulligans: g
 	};
 }
-export { ce as BOARD_LENGTHS, le as verifyRound };
+export { fe as BOARD_LENGTHS, pe as verifyRound };
