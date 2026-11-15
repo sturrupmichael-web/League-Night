@@ -212,12 +212,12 @@ export class Friends {
           { caption: () => (LENGTHS[this.lengthIdx] === 3 ? 'QUICK ONE' : LENGTHS[this.lengthIdx] === 9 ? 'THE FRONT NINE' : 'THE FULL COURSE'), value: () => `< ${LENGTHS[this.lengthIdx]} HOLES >`, onTap: () => (this.lengthIdx = (this.lengthIdx + 1) % LENGTHS.length) },
           {
             caption: () => (this.playAhead ? 'PLAY YOUR WHOLE CARD ANY TIME' : 'AT MOST ONE HOLE AHEAD'),
-            value: () => (this.playAhead ? 'PLAY AHEAD: ON' : 'PLAY AHEAD: OFF'),
+            value: () => (this.playAhead ? '< PLAY AHEAD: ON >' : '< PLAY AHEAD: OFF >'),
             onTap: () => (this.playAhead = !this.playAhead),
           },
           {
             caption: () => (this.pacing === 'throw' ? "WATCH YOUR FRIEND'S THROWS" : 'JUST THEIR HOLE SCORES'),
-            value: () => (this.pacing === 'throw' ? 'THROW BY THROW' : 'HOLE BY HOLE'),
+            value: () => (this.pacing === 'throw' ? '< THROW BY THROW >' : '< HOLE BY HOLE >'),
             onTap: () => (this.pacing = this.pacing === 'throw' ? 'hole' : 'throw'),
           },
           {
@@ -225,7 +225,7 @@ export class Friends {
             value: () => `${first(this.host.meta().name)} · ${this.host.meta().hand === 'right' ? 'RIGHTY' : 'LEFTY'}`,
             onTap: () => this.host.chasers(() => this.setupHost()),
           },
-          { caption: 'NO MULLIGANS', value: 'GET A CODE', onTap: () => void this.create() },
+          { caption: 'NO MULLIGANS', value: 'GET A CODE', onTap: () => void this.create(), primary: true },
           { caption: '', value: 'BACK', onTap: () => this.menu() },
         ],
         draw: (ctx, t) => {
@@ -669,7 +669,7 @@ export class Friends {
         overlay: { title: 'PAUSED', sub: 'FRIEND MATCH · EVERY THROW IS SAVED' },
         top: 100,
         items: [
-          { caption: '', value: 'RESUME', onTap: () => this.game.pop() },
+          { caption: '', value: 'RESUME', onTap: () => this.game.pop(), primary: true },
           ...this.host.toggles(),
           { caption: 'PICK UP HERE LATER', value: 'BACK TO THE CARD', onTap: () => this.leaveHole() },
           {

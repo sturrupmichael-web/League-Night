@@ -201,6 +201,7 @@ export class HoleScene implements Scene {
         caption: () => (this.opts.holeNumber >= this.opts.holeCount ? 'ROUND COMPLETE' : `ON TO HOLE ${this.opts.holeNumber + 1}`),
         value: () => (this.opts.holeNumber >= this.opts.holeCount ? 'SEE THE CARD' : 'NEXT HOLE'),
         onTap: () => this.opts.onFinish?.(this.record()),
+        primary: true,
       },
     ];
   }
@@ -226,6 +227,7 @@ export class HoleScene implements Scene {
         caption: () => 'ANGLE',
         value: () => RELEASES[this.releaseIdx].label,
         onTap: () => (this.releaseIdx = (this.releaseIdx + 1) % RELEASES.length),
+        cycle: true,
         enabled: () => !putting(),
       },
       {
@@ -233,6 +235,7 @@ export class HoleScene implements Scene {
         caption: () => 'STYLE',
         value: () => this.style.toUpperCase(),
         onTap: () => (this.styleIdx = (this.styleIdx + 1) % STYLES.length),
+        cycle: true,
         enabled: () => !putting(),
       },
       {
@@ -240,6 +243,7 @@ export class HoleScene implements Scene {
         caption: () => 'HAND',
         value: () => (this.hand === 'right' ? 'RIGHTY' : 'LEFTY'),
         onTap: () => (this.hand = this.hand === 'right' ? 'left' : 'right'),
+        cycle: true,
       },
     ];
     const map: Button = {
@@ -250,7 +254,7 @@ export class HoleScene implements Scene {
     };
     if (this.opts.practice) {
       tray.push(
-        { x: 46, y: row2, w: 41, h: 20, caption: () => 'WIND', value: () => PRACTICE_WINDS[this.windIdx].label, onTap: () => this.cycleWind() },
+        { x: 46, y: row2, w: 41, h: 20, caption: () => 'WIND', value: () => PRACTICE_WINDS[this.windIdx].label, onTap: () => this.cycleWind(), cycle: true },
         { x: 89, y: row2, w: 44, h: 20, caption: () => 'BACK TO', value: () => 'TEE', onTap: () => this.resetHole() },
         { ...map, x: 135, w: 42 },
       );

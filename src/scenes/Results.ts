@@ -57,7 +57,7 @@ export class ResultsScene extends MenuScene {
       },
       ...(actions.post
         ? [
-            { x: 4, y, w: 56, h: 22, caption: () => 'SAME AGAIN', value: () => 'PLAY', onTap: actions.again },
+            { x: 4, y, w: 56, h: 22, caption: () => 'SAME AGAIN', value: () => 'PLAY', onTap: actions.again, primary: true },
             {
               x: 62, y, w: 56, h: 22,
               caption: () => (this.posting ? 'SENDING' : this.posted ? 'ON THE BOARD' : 'LEADERBOARD'),

@@ -32,7 +32,7 @@ export class LeaderboardScene extends MenuScene {
     this.courseIdx = Math.max(0, COURSES.findIndex((c) => c.id === start.courseId));
     this.holes = start.holes ?? 18;
     const tog = (x: number, w: number, value: string, on: () => boolean, tap: () => void) => {
-      const b = { x, y: 64, w, h: 18, caption: () => '', value: () => value, onTap: () => { if (!on()) { tap(); this.load(); } } };
+      const b = { x, y: 62, w, h: 22, caption: () => '', value: () => value, onTap: () => { if (!on()) { tap(); this.load(); } } };
       this.toggles.push({ b, on });
       return b;
     };

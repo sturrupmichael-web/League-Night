@@ -145,10 +145,10 @@ export class App {
     const items: MenuItem[] = [];
     if (r && !isRoundOver(r)) {
       const n = currentHoleIndex(r) + 1;
-      items.push({ caption: `${MODE_NAME[roundMode(r)]} · HOLE ${n} OF ${r.order.length}`, value: 'CONTINUE', onTap: () => this.playHole() });
+      items.push({ caption: `${MODE_NAME[roundMode(r)]} · HOLE ${n} OF ${r.order.length}`, value: 'CONTINUE', onTap: () => this.playHole(), primary: true });
     }
     items.push(
-      { caption: 'YOU AND THE COURSE', value: 'NEW ROUND', onTap: () => this.newRoundFlow() },
+      { caption: 'YOU AND THE COURSE', value: 'NEW ROUND', onTap: () => this.newRoundFlow(), primary: !(r && !isRoundOver(r)) },
       { caption: 'SEASON FINALE VS THE FIELD', value: 'THE LANTERN CUP', onTap: () => this.setupCup() },
       { caption: 'HEAD TO HEAD FOR SKINS', value: 'SKINS', onTap: () => this.setupSkins() },
       { caption: () => (this.friends.yourTurn ? `YOUR TURN IN ${this.friends.yourTurn} MATCH${this.friends.yourTurn > 1 ? 'ES' : ''}` : 'ONLINE · SAME COURSE'), value: 'PLAY A FRIEND', onTap: () => this.friends.menu() },
@@ -261,7 +261,7 @@ export class App {
           this.courseItem(),
           { caption: () => LENGTHS[this.lengthIdx].caption, value: () => `< ${LENGTHS[this.lengthIdx].label} >`, onTap: () => (this.lengthIdx = (this.lengthIdx + 1) % LENGTHS.length) },
           this.chaserItem(() => this.setup()),
-          { caption: this.replacesNote() || '3 MULLIGANS', value: 'TEE OFF', onTap: () => this.startRound({ mode: 'casual', length: LENGTHS[this.lengthIdx].n }) },
+          { caption: this.replacesNote() || '3 MULLIGANS', value: 'TEE OFF', primary: true, onTap: () => this.startRound({ mode: 'casual', length: LENGTHS[this.lengthIdx].n }) },
           { caption: '', value: 'BACK', onTap: () => this.title() },
         ],
         draw: (ctx, t) => {
@@ -282,7 +282,7 @@ export class App {
           this.courseItem(),
           { caption: () => LENGTHS[this.cupLengthIdx].caption, value: () => `< ${LENGTHS[this.cupLengthIdx].label} >`, onTap: () => (this.cupLengthIdx = (this.cupLengthIdx + 1) % LENGTHS.length) },
           this.chaserItem(() => this.setupCup()),
-          { caption: this.replacesNote() || 'NO MULLIGANS', value: 'TEE OFF', onTap: () => this.startRound({ mode: 'cup', length: LENGTHS[this.cupLengthIdx].n }) },
+          { caption: this.replacesNote() || 'NO MULLIGANS', value: 'TEE OFF', primary: true, onTap: () => this.startRound({ mode: 'cup', length: LENGTHS[this.cupLengthIdx].n }) },
           { caption: '', value: 'BACK', onTap: () => this.title() },
         ],
         draw: (ctx, t) => {
@@ -307,12 +307,12 @@ export class App {
           { caption: () => `SKILL ${'*'.repeat(Math.max(1, Math.round(rival().skill * 5)))}`, value: () => `< ${rival().name} >`, onTap: () => (this.rivalIdx = (this.rivalIdx + 1) % RIVALS.length) },
           {
             caption: () => (this.skinsRule === 'carry' ? 'TIES CARRY THE POT' : 'TIES LOSE THE SKIN'),
-            value: () => (this.skinsRule === 'carry' ? 'CARRY-OVER' : 'SUDDEN DEATH'),
+            value: () => (this.skinsRule === 'carry' ? '< CARRY-OVER >' : '< SUDDEN DEATH >'),
             onTap: () => (this.skinsRule = this.skinsRule === 'carry' ? 'sudden' : 'carry'),
           },
           {
             caption: () => (this.pacing === 'throw' ? 'WATCH EVERY RIVAL THROW' : 'JUST THE HOLE RESULTS'),
-            value: () => (this.pacing === 'throw' ? 'THROW BY THROW' : 'HOLE BY HOLE'),
+            value: () => (this.pacing === 'throw' ? '< THROW BY THROW >' : '< HOLE BY HOLE >'),
             onTap: () => (this.pacing = this.pacing === 'throw' ? 'hole' : 'throw'),
           },
           this.courseItem(),
@@ -321,6 +321,7 @@ export class App {
           {
             caption: this.replacesNote() || 'NO MULLIGANS',
             value: 'TEE OFF',
+            primary: true,
             onTap: () => this.startRound({ mode: 'skins', length: LENGTHS[this.skinsLengthIdx].n, rivalId: rival().id, skinsRule: this.skinsRule, pacing: this.pacing }),
           },
           { caption: '', value: 'BACK', onTap: () => this.title() },
@@ -519,7 +520,7 @@ export class App {
     this.game.set(
       new MenuScene({
         top: 270,
-        items: [{ caption: over ? 'FINAL STANDINGS' : `HOLE ${round.card.length + 1} NEXT`, value: over ? 'SEE THE CARD' : 'NEXT HOLE', onTap: next }],
+        items: [{ caption: over ? 'FINAL STANDINGS' : `HOLE ${round.card.length + 1} NEXT`, value: over ? 'SEE THE CARD' : 'NEXT HOLE', onTap: next, primary: true }],
         draw: (ctx, t) => {
           drawLanterns(ctx, t, -8);
           drawBigText(ctx, 'LEADERBOARD', VIEW_W / 2, 18, PAL.amber);
@@ -555,7 +556,7 @@ export class App {
     this.game.set(
       new MenuScene({
         top: 270,
-        items: [{ caption: over ? 'MATCH OVER' : `${1 + (round.settings.skinsRule === 'carry' ? t.carry : 0)} ON THE LINE NEXT`, value: over ? 'SEE THE CARD' : 'NEXT HOLE', onTap: next }],
+        items: [{ caption: over ? 'MATCH OVER' : `${1 + (round.settings.skinsRule === 'carry' ? t.carry : 0)} ON THE LINE NEXT`, value: over ? 'SEE THE CARD' : 'NEXT HOLE', onTap: next, primary: true }],
         draw: (ctx, tm) => {
           drawLanterns(ctx, tm, -8);
           drawBigText(ctx, `${t.you} - ${t.rival}`, VIEW_W / 2, 18, t.you >= t.rival ? PAL.amber : PAL.ink);
@@ -790,7 +791,7 @@ export class App {
   private pause(round: RoundState | null) {
     let confirmRestart = false;
     let confirmConcede = false;
-    const items: MenuItem[] = [{ caption: '', value: 'RESUME', onTap: () => this.game.pop() }, ...this.toggles()];
+    const items: MenuItem[] = [{ caption: '', value: 'RESUME', onTap: () => this.game.pop(), primary: true }, ...this.toggles()];
     if (round && roundMode(round) === 'skins' && !this.ephemeral) {
       items.push({
         caption: () => (confirmConcede ? 'CANNOT BE UNDONE' : 'GIVE THE MATCH AWAY'),
@@ -870,7 +871,7 @@ export class App {
           ...this.toggles(),
           {
             caption: 'NO SHAKE, CALMER EFFECTS',
-            value: () => `REDUCE MOTION: ${{ auto: 'AUTO', on: 'ON', off: 'OFF' }[this.save.settings.motion]}`,
+            value: () => `< REDUCE MOTION: ${{ auto: 'AUTO', on: 'ON', off: 'OFF' }[this.save.settings.motion]} >`,
             onTap: () => {
               const order = ['auto', 'on', 'off'] as const;
               this.save.settings.motion = order[(order.indexOf(this.save.settings.motion) + 1) % 3];
@@ -880,7 +881,7 @@ export class App {
           },
           {
             caption: 'THROWING HAND',
-            value: () => (this.save.settings.hand === 'right' ? 'RIGHTY' : 'LEFTY'),
+            value: () => (this.save.settings.hand === 'right' ? '< RIGHTY >' : '< LEFTY >'),
             onTap: () => {
               this.save.settings.hand = this.save.settings.hand === 'right' ? 'left' : 'right';
               this.persist();

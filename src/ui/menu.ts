@@ -14,6 +14,8 @@ export interface MenuItem {
   value: string | (() => string);
   onTap: () => void;
   enabled?: () => boolean;
+  /** The screen's main action (amber). */
+  primary?: boolean;
   /** Place this button somewhere other than the main column. */
   box?: { x: number; y: number; w: number; h?: number };
 }
@@ -52,6 +54,7 @@ export class MenuScene implements Scene {
       value: fn(it.value),
       onTap: it.onTap,
       enabled: it.enabled,
+      primary: it.primary,
     }));
   }
 

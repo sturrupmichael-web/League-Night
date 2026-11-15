@@ -9,11 +9,11 @@ import { drawButton } from '../ui/button';
 import { drawBigText, drawLanterns, MenuScene } from '../ui/menu';
 
 const KEYS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-.';
-const COLS = 8;
-const KEY_W = 20;
-const KEY_H = 20;
+const COLS = 7;
+const KEY_W = 24;
+const KEY_H = 22;
 const KEYS_X = Math.round((VIEW_W - COLS * KEY_W) / 2);
-const KEYS_Y = 112;
+const KEYS_Y = 110;
 
 export class NameEntryScene extends MenuScene {
   name = '';
@@ -42,12 +42,12 @@ export class NameEntryScene extends MenuScene {
       value: () => ch,
       onTap: () => this.type(ch),
     }));
-    const y = KEYS_Y + 5 * KEY_H + 6;
+    const y = KEYS_Y + Math.ceil(KEYS.length / COLS) * KEY_H + 4;
     this.buttons.push(
       { x: 10, y, w: 50, h: 22, caption: () => '', value: () => 'SPACE', onTap: () => this.type(' ') },
       { x: 64, y, w: 52, h: 22, caption: () => '', value: () => 'DEL', onTap: () => this.del() },
-      { x: 120, y, w: 50, h: 22, caption: () => (this.busy ? 'SAVING' : ''), value: () => 'SAVE', onTap: () => this.submit(), enabled: () => cleanName(this.name).length > 0 && !this.busy },
-      { x: 30, y: y + 32, w: 120, h: 22, caption: () => '', value: () => 'BACK', onTap: () => this.leave() },
+      { x: 120, y, w: 50, h: 22, caption: () => (this.busy ? 'SAVING' : ''), value: () => 'SAVE', primary: true, onTap: () => this.submit(), enabled: () => cleanName(this.name).length > 0 && !this.busy },
+      { x: 30, y: y + 28, w: 120, h: 22, caption: () => '', value: () => 'BACK', onTap: () => this.leave() },
     );
     window.addEventListener('keydown', this.onKey);
   }
@@ -85,7 +85,7 @@ export class NameEntryScene extends MenuScene {
     const cursor = Math.floor(this.time * 2) % 2 === 0 && this.name.length < NAME_MAX ? '_' : '';
     drawBigText(ctx, this.name + cursor, VIEW_W / 2, 79, PAL.ink);
     if (this.message) drawText(ctx, this.message, VIEW_W / 2, 100, PAL.red, 'center');
-    else drawText(ctx, `${this.name.length}/${NAME_MAX}`, VIEW_W / 2, 100, PAL.night3, 'center');
+    else drawText(ctx, `${this.name.length}/${NAME_MAX}`, VIEW_W / 2, 100, PAL.haze, 'center');
     for (const b of this.buttons) drawButton(ctx, b);
   }
 }

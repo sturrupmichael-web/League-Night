@@ -45,6 +45,7 @@ export class ChaserScene extends MenuScene {
       {
         x: 120, y: 226, w: 56, h: 20,
         caption: () => 'HAND',
+        cycle: true,
         value: () => (save.settings.hand === 'right' ? 'RIGHTY' : 'LEFTY'),
         onTap: () => {
           save.settings.hand = save.settings.hand === 'right' ? 'left' : 'right';
