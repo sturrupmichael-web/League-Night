@@ -36,6 +36,7 @@ import { makeTerrain } from './sim/terrain';
 import type { ThrowResult } from './sim/throw';
 import { ChaserScene } from './scenes/Chasers';
 import { HoleScene } from './scenes/HoleScene';
+import { BagScene } from './scenes/Bag';
 import { HowToScene } from './scenes/HowTo';
 import { LockerScene, TURN_GAMES } from './scenes/Locker';
 import { type Clip, ReplayScene } from './scenes/Replay';
@@ -192,6 +193,7 @@ export class App {
       new LockerScene(this.save, () => this.persist(), {
         back,
         turnGame: (id) => this.turnGame(id, (cred) => this.addCred(cred), () => this.locker(back)),
+        bag: () => this.game.set(new BagScene(() => this.locker(back))),
       }),
     );
   }

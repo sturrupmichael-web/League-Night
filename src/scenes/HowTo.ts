@@ -47,7 +47,7 @@ const PAGES: Page[] = [
   {
     title: '2 · YOUR BAG',
     text: [
-      'Every disc in your bag flies its own way.',
+      'Every disc flies its own way. Its four flight numbers are in the Locker, under YOUR BAG.',
       'Putters sit where they land. Fast drivers skate on, but need a big arm or they dump early.',
       'Tap the disc button to swap.',
     ],

@@ -17,7 +17,7 @@ export class LockerScene extends MenuScene {
   constructor(
     private save: SaveData,
     persist: () => void,
-    actions: { back: () => void; turnGame: (id: string) => void },
+    actions: { back: () => void; turnGame: (id: string) => void; bag: () => void },
   ) {
     super({ items: [], top: 0 });
     this.opts.draw = (ctx, t) => this.drawContent(ctx, t);
@@ -41,7 +41,8 @@ export class LockerScene extends MenuScene {
         value: () => g.name,
         onTap: () => actions.turnGame(g.id),
       })),
-      { x: 50, y: 290 + EXTRA_H, w: 80, h: 22, caption: () => '', value: () => 'BACK', onTap: actions.back },
+      { x: 12, y: 290 + EXTRA_H, w: 76, h: 22, caption: () => 'FLIGHT NUMBERS', value: () => 'YOUR BAG', onTap: actions.bag },
+      { x: 92, y: 290 + EXTRA_H, w: 76, h: 22, caption: () => '', value: () => 'BACK', onTap: actions.back },
     ];
   }
 
