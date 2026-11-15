@@ -183,15 +183,15 @@ export class App {
 
   // ---------- Meta screens ----------
 
-  private chasers(back: () => void) {
-    this.game.set(new ChaserScene(this.save, () => this.persist(), back));
+  private chasers(back: () => void, startId?: string) {
+    this.game.set(new ChaserScene(this.save, () => this.persist(), back, startId));
   }
 
-  private locker() {
+  private locker(back: () => void = () => this.title()) {
     this.game.set(
       new LockerScene(this.save, () => this.persist(), {
-        back: () => this.title(),
-        turnGame: (id) => this.turnGame(id, (cred) => this.addCred(cred), () => this.locker()),
+        back,
+        turnGame: (id) => this.turnGame(id, (cred) => this.addCred(cred), () => this.locker(back)),
       }),
     );
   }
@@ -697,6 +697,14 @@ export class App {
             title: () => this.title(),
             reel: () => this.game.set(new ReplayScene(clips, cfg, show, this.dyeColor)),
             post: !this.ephemeral && postable(round) ? (scene) => void this.postRound(round, scene) : undefined,
+            board: (scene) => this.leaderboard(() => this.game.set(scene), { courseId: round.settings.courseId, holes: round.order.length === 18 ? 18 : 9 }),
+            unlock: (line, scene) => {
+              const back = () => this.game.set(scene);
+              // "CHASER: JUNE LINDQVIST" or "MAE: CHAPTER 2": open on that chaser.
+              const who = CHASERS.find((c) => line === `CHASER: ${c.name}` || line.startsWith(`${c.name.split(' ')[0]}: CHAPTER`));
+              if (who) this.chasers(back, who.id);
+              else this.locker(back);
+            },
           },
           night,
           highlights,

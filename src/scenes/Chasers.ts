@@ -24,10 +24,12 @@ export class ChaserScene extends MenuScene {
     private save: SaveData,
     private persist: () => void,
     done: () => void,
+    /** Open on this chaser instead of the one you play as. */
+    startId?: string,
   ) {
     super({ items: [], top: 0 });
     this.opts.draw = (ctx) => this.drawContent(ctx);
-    this.idx = Math.max(0, CHASERS.findIndex((c) => c.id === save.chaserId));
+    this.idx = Math.max(0, CHASERS.findIndex((c) => c.id === (startId ?? save.chaserId)));
     const c = () => CHASERS[this.idx];
     const unlocked = () => isChaserUnlocked(c(), save);
     const row = 252;

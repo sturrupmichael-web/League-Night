@@ -39,11 +39,21 @@ export class ResultsScene extends MenuScene {
   constructor(
     private round: RoundState,
     private course: CourseDef,
-    actions: { again: () => void; title: () => void; reel: () => void; post?: (scene: ResultsScene) => void },
+    actions: {
+      again: () => void;
+      title: () => void;
+      reel: () => void;
+      post?: (scene: ResultsScene) => void;
+      /** Open the leaderboard on this round's course and length (after posting). */
+      board?: (scene: ResultsScene) => void;
+      /** Open the screen where an unlock lives (Chasers or Locker). */
+      unlock?: (line: string, scene: ResultsScene) => void;
+    },
     private night: NightSummary,
     private highlights: Highlight[],
   ) {
     super({ items: [], top: 0 });
+    this.onUnlock = actions.unlock ? (u) => actions.unlock!(u, this) : null;
     const y = VIEW_H - 26;
     const tw = 42;
     this.buttons = [
@@ -60,22 +70,33 @@ export class ResultsScene extends MenuScene {
             { x: 4, y, w: 56, h: 22, caption: () => 'SAME AGAIN', value: () => 'PLAY', onTap: actions.again, primary: true },
             {
               x: 62, y, w: 56, h: 22,
-              caption: () => (this.posting ? 'SENDING' : this.posted ? 'ON THE BOARD' : 'LEADERBOARD'),
-              value: () => (this.posted ? this.posted : 'POST'),
-              onTap: () => actions.post!(this),
-              enabled: () => !this.posting && !this.posted,
+              caption: () => (this.posting ? 'SENDING' : this.posted ? `YOU ARE ${this.posted}` : 'LEADERBOARD'),
+              value: () => (this.posted && actions.board ? 'SEE BOARD' : this.posted || 'POST'),
+              onTap: () => (this.posted ? actions.board?.(this) : actions.post!(this)),
+              enabled: () => !this.posting && (!this.posted || !!actions.board),
             },
-            { x: 120, y, w: 56, h: 22, caption: () => 'BACK TO', value: () => 'TITLE', onTap: actions.title },
+            { x: 120, y, w: 56, h: 22, caption: () => '', value: () => 'TITLE', onTap: actions.title },
           ]
         : [
-            { x: 6, y, w: 82, h: 22, caption: () => 'SAME AGAIN', value: () => 'PLAY AGAIN', onTap: actions.again },
-            { x: 92, y, w: 82, h: 22, caption: () => 'BACK TO', value: () => 'TITLE', onTap: actions.title },
+            { x: 6, y, w: 82, h: 22, caption: () => 'SAME AGAIN', value: () => 'PLAY AGAIN', onTap: actions.again, primary: true },
+            { x: 92, y, w: 82, h: 22, caption: () => '', value: () => 'TITLE', onTap: actions.title },
           ]),
     ];
   }
 
+  private onUnlock: ((line: string) => void) | null;
+  /** Where each unlock line was drawn on the TONIGHT tab, for taps. */
+  private unlockRows: { y: number; line: string }[] = [];
+
   // The reel button only exists on the reel tab.
   down(p: Parameters<MenuScene['down']>[0]) {
+    if (this.tab === 'night' && this.onUnlock) {
+      const row = this.unlockRows.find((r) => p.y >= r.y - 2 && p.y < r.y + 8);
+      if (row) {
+        this.onUnlock(row.line);
+        return;
+      }
+    }
     if (this.tab !== 'reel' && p.y >= 236 && p.y < 258 && p.x >= 40 && p.x < 140) return;
     super.down(p);
   }
@@ -83,7 +104,7 @@ export class ResultsScene extends MenuScene {
   render(ctx: CanvasRenderingContext2D) {
     ctx.fillStyle = PAL.night1;
     ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-    drawLanterns(ctx, this.time, -8);
+    drawLanterns(ctx, this.time, -14); // high enough to clear the header
     const r = this.round;
     const t = cardTotals(r.card);
     drawText(ctx, `${this.course.name} · ${r.order.length} HOLE${r.order.length === 1 ? '' : 'S'}`, VIEW_W / 2, 18, PAL.inkDim, 'center');
@@ -143,9 +164,38 @@ export class ResultsScene extends MenuScene {
     drawText(ctx, 'CRED EARNED', 8, y + 1, PAL.amber);
     drawText(ctx, `+${total}`, VIEW_W - 8, y + 1, PAL.amber, 'right');
     y += 12;
+    this.unlockRows = [];
     for (const u of n.unlocks.slice(0, 3)) {
-      drawText(ctx, `NEW: ${u}`, VIEW_W / 2, y, PAL.white, 'center');
-      y += 8;
+      drawText(ctx, `NEW: ${u}${this.onUnlock ? ' >' : ''}`, VIEW_W / 2, y, PAL.amber, 'center');
+      this.unlockRows.push({ y, line: u });
+      y += 9;
+    }
+    this.drawMiniCard(ctx, y + 6);
+  }
+
+  /** The scorecard in short: hole numbers over each hole's score against par, nine to a row, if there's room. */
+  private drawMiniCard(ctx: CanvasRenderingContext2D, top: number) {
+    const card = this.round.card;
+    const rows = Math.ceil(card.length / 9);
+    const bottom = VIEW_H - 44; // above the post message and the buttons
+    if (!card.length || top + rows * 20 + 8 > bottom) return;
+    ctx.fillStyle = PAL.night3;
+    ctx.fillRect(4, top, VIEW_W - 8, 1);
+    let y = top + 6;
+    const cw = 16;
+    for (let r = 0; r < rows; r++) {
+      const slice = card.slice(r * 9, r * 9 + 9);
+      const x0 = 8;
+      drawText(ctx, 'HOLE', x0, y, PAL.haze);
+      drawText(ctx, 'PAR', x0, y + 9, PAL.haze);
+      slice.forEach((h, i) => {
+        const cx = x0 + 22 + i * cw + cw / 2;
+        const d = h.strokes - h.par;
+        drawText(ctx, String(r * 9 + i + 1), cx, y, PAL.inkDim, 'center');
+        // Each hole against par (-1, E, +2): readable without the colour.
+        drawText(ctx, formatToPar(d), cx, y + 9, d < 0 ? PAL.amber : d > 0 ? PAL.inkDim : PAL.ink, 'center');
+      });
+      y += 20;
     }
   }
 
