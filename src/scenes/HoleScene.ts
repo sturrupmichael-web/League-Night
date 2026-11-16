@@ -173,6 +173,9 @@ export class HoleScene implements Scene {
   private aimT = 0;
   /** Where the aim preview says the current pull carries (feet), or null with no pull. */
   private previewCarry: number | null = null;
+  /** The preview's touchdown spot, and where it would likely stop if it skates or rolls on. */
+  private previewLand: Vec2 | null = null;
+  private previewRest: PathPoint[] = [];
   private hint: { text: string; t: number } | null = null;
   private projCache: { key: string; p: PuttProjector } | null = null;
   /** Feel: world-space bursts, putt-view sparks (screen pixels) and screen shake. */
@@ -386,7 +389,7 @@ export class HoleScene implements Scene {
     if (this.mode !== 'aim' && this.mode !== 'rest' && this.mode !== 'intro') return;
     this.picker = true;
     this.gesture = null;
-    this.preview = [];
+    this.clearPreview();
   }
 
   private pickDisc(i: number) {
@@ -530,7 +533,7 @@ export class HoleScene implements Scene {
       if (!this.puttViewVisible() && this.mode !== 'done') {
         const [a, b] = [...all.values()];
         this.gesture = { kind: 'pinch' };
-        this.preview = [];
+        this.clearPreview();
         this.rig.pinchStart(a, b);
       }
       return;
@@ -589,7 +592,7 @@ export class HoleScene implements Scene {
     if (near && this.inGimme()) this.gesture = { kind: 'gimme', id: p.id };
     else if (near) this.gesture = { kind: 'sling', id: p.id, pull: { x: 0, y: 0 } };
     else this.gesture = { kind: 'pan', id: p.id, last: { x: p.x, y: p.y } };
-    this.preview = [];
+    this.clearPreview();
   }
 
   move(p: PointerInfo, all: Map<number, PointerInfo>) {
@@ -650,7 +653,7 @@ export class HoleScene implements Scene {
         this.toggleOverview();
         break;
       case 'sling': {
-        this.preview = [];
+        this.clearPreview();
         if (Math.hypot(g.pull.x, g.pull.y) < this.cfg.cancelPullPx) return; // dragged back onto the disc
         this.throwDisc(this.inputFromPull(g.pull));
         break;
@@ -672,7 +675,7 @@ export class HoleScene implements Scene {
     if (this.gesture?.kind === 'button') this.gesture.b.pressed = false;
     if (this.gesture?.kind === 'pinch') this.rig.pinchEnd();
     this.gesture = null;
-    this.preview = [];
+    this.clearPreview();
   }
 
   wheel(x: number, y: number, deltaY: number) {
@@ -703,16 +706,28 @@ export class HoleScene implements Scene {
 
   private updatePreview(pull: Vec2) {
     if (Math.hypot(pull.x, pull.y) < this.cfg.cancelPullPx) {
-      this.preview = [];
-      this.previewCarry = null;
+      this.clearPreview();
       return;
     }
+    // Same flight sim, disc, wind and terrain as the real throw. The only thing left out is the
+    // redline wobble (random aim/bank/turn), so a redline pull previews its steady average.
     const input = this.inputFromPull(pull);
-    input.power = Math.min(1, input.power); // the preview never shows redline wobble
-    const r = simulateThrow(input, this.disc, this.env(), 1, this.cfg);
+    const cfg = { ...this.cfg, redlineAimWobbleDeg: 0, redlineBankWobbleDeg: 0, redlineExtraTurn: 0 };
+    const r = simulateThrow(input, this.disc, this.env(), 1, cfg);
     this.previewCarry = Math.round(r.carry);
     const cut = r.flight.landing.t * this.cfg.previewFraction;
     this.preview = r.flight.path.filter((q) => q.t <= cut);
+    this.previewLand = this.cfg.previewFraction >= 1 ? { x: r.flight.landing.x, y: r.flight.landing.y } : null;
+    // Skates and rolls slide on predictably; skips, tumbles and penalties are left as a landing only.
+    const k = r.ground.kind;
+    this.previewRest = this.previewLand && (k === 'skate' || k === 'roll') ? r.ground.path : [];
+  }
+
+  private clearPreview() {
+    this.preview = [];
+    this.previewCarry = null;
+    this.previewLand = null;
+    this.previewRest = [];
   }
 
   private throwDisc(input: ThrowInput) {
@@ -1231,15 +1246,41 @@ export class HoleScene implements Scene {
     const power = this.powerFromPull(pull);
     ctx.fillStyle = power > 1.005 ? PAL.red : PAL.inkDim;
     for (let i = 0; i < len; i += 2) ctx.fillRect(Math.round(d.x - ux * i), Math.round(d.y - uy * i), 1, 1);
+    // A short release-direction tick. Distance comes from the flight preview, not this.
     ctx.fillStyle = PAL.ink;
-    const aimLen = 28 + power * 20;
-    for (let i = 4; i < aimLen; i += 3) ctx.fillRect(Math.round(d.x + ux * i), Math.round(d.y + uy * i), 1, 1);
+    for (let i = 4; i < 14; i += 3) ctx.fillRect(Math.round(d.x + ux * i), Math.round(d.y + uy * i), 1, 1);
     const altScale = 0.5 * cam.zoom;
-    ctx.fillStyle = 'rgba(242,181,68,0.55)';
-    for (let i = 0; i < this.preview.length; i += 3) {
-      const q = this.preview[i];
-      const s = worldToScreen(cam, q.x, q.y);
-      ctx.fillRect(Math.round(s.x), Math.round(s.y - (q.z - this.terrain.height(q.x, q.y)) * altScale), 1, 1);
+    const dots = (pts: PathPoint[], color: string, gap: number) => {
+      ctx.fillStyle = color;
+      let last: Vec2 | null = null;
+      for (const q of pts) {
+        const s = worldToScreen(cam, q.x, q.y);
+        const y = s.y - (q.z - this.terrain.height(q.x, q.y)) * altScale;
+        if (last && Math.hypot(s.x - last.x, y - last.y) < gap) continue;
+        last = { x: s.x, y };
+        ctx.fillRect(Math.round(s.x), Math.round(y), 1, 1);
+      }
+    };
+    // The predicted flight, drawn like the real flight's trail (height lifts it up the screen).
+    dots(this.preview, 'rgba(242,181,68,0.8)', 3);
+    if (!this.previewLand) return;
+    dots(this.previewRest, 'rgba(242,181,68,0.4)', 2);
+    const L = worldToScreen(cam, this.previewLand.x, this.previewLand.y);
+    const lx = Math.round(L.x);
+    const ly = Math.round(L.y);
+    ctx.strokeStyle = PAL.amber;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(lx + 0.5, ly + 0.5, 3.5, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = PAL.amber;
+    ctx.fillRect(lx, ly, 1, 1);
+    if (this.previewCarry !== null) {
+      const label = `${power > 1.005 ? '~' : ''}${this.previewCarry} FT`;
+      const right = lx > VIEW_W - 44;
+      const tx = clamp(lx + (right ? -6 : 6), 2, VIEW_W - 2);
+      const ty = clamp(ly - 4, HUD_H + 2, VIEW_H - 10);
+      drawTextShadow(ctx, label, tx, ty, PAL.amber, PAL.night0, right ? 'right' : 'left');
     }
   }
 
@@ -1260,9 +1301,9 @@ export class HoleScene implements Scene {
     ctx.fillRect(x - 2, redY, 10, 1);
     drawTextShadow(ctx, `${Math.round(power * 100)}`, x + 3, top + h + 4, power > 1.005 ? PAL.red : PAL.ink, PAL.night0, 'center');
     if (power > 1.005) drawTextShadow(ctx, 'REDLINE', x + 6, top - 9, PAL.red, PAL.night0, 'right');
-    // How far this pull carries (the steady preview; the redline adds distance and wobble).
+    // How far this pull carries in the air (a redline pull shows its average; wobble varies it).
     if (this.previewCarry !== null) {
-      drawTextShadow(ctx, `${this.previewCarry}${power > 1.005 ? '+' : ''}`, VIEW_W - 2, top + h + 13, PAL.ink, PAL.night0, 'right');
+      drawTextShadow(ctx, `${power > 1.005 ? '~' : ''}${this.previewCarry}`, VIEW_W - 2, top + h + 13, PAL.ink, PAL.night0, 'right');
       drawTextShadow(ctx, 'FT', VIEW_W - 2, top + h + 21, PAL.inkDim, PAL.night0, 'right');
     }
   }
