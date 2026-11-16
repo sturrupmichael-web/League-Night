@@ -161,8 +161,8 @@ export const DEFAULT_CONFIG = {
   maxViewH: 400,
   grabRadiusPx: 22,
   cancelPullPx: 8,
-  /** Fraction of the flight time shown as the faint preview line. */
-  previewFraction: 0.3,
+  /** Fraction of the flight time shown as the preview line. 1 = the whole flight, with a landing ring. */
+  previewFraction: 1,
 };
 
 export type Config = typeof DEFAULT_CONFIG;
