@@ -10,8 +10,8 @@
 // from this public repository at a pinned commit and checks its SHA-256 before running it.
 // After changing the physics or courses: rebuild it, commit, then update VERIFIER_COMMIT and
 // VERIFIER_SHA256 below and redeploy this file (verify_jwt on).
-const VERIFIER_COMMIT = '43c3f805bf2cbec4a054f4f9ae66eb1ded1f3fd5';
-const VERIFIER_SHA256 = 'efa91606cf8a74b240a88257e926c70231c33dd362c11cac104840cd26ffa406';
+const VERIFIER_COMMIT = '2e5c5d2bad67cee066ab3abcd0de77790357fdd9';
+const VERIFIER_SHA256 = 'b22798796d665928136acc8137c9f57e9fefd378d85ea40473e8a15054e2b4e3';
 const VERIFIER_URL = `https://raw.githubusercontent.com/sturrupmichael-web/League-Night/${VERIFIER_COMMIT}/supabase/functions/ln-submit-score/verify.iife.js`;
 
 type Verdict = { ok: boolean; issues: string[]; courseId: string; holes: number; strokes: number; par: number; mulligans: number; mode: string; chaserId: string };
