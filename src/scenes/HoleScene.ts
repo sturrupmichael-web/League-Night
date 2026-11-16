@@ -173,9 +173,8 @@ export class HoleScene implements Scene {
   private aimT = 0;
   /** Where the aim preview says the current pull carries (feet), or null with no pull. */
   private previewCarry: number | null = null;
-  /** The preview's touchdown spot, and where it would likely stop if it skates or rolls on. */
-  private previewLand: Vec2 | null = null;
-  private previewRest: PathPoint[] = [];
+  /** Release direction of the current pull, for the distance arc. */
+  private previewAim = 0;
   private hint: { text: string; t: number } | null = null;
   private projCache: { key: string; p: PuttProjector } | null = null;
   /** Feel: world-space bursts, putt-view sparks (screen pixels) and screen shake. */
@@ -717,17 +716,12 @@ export class HoleScene implements Scene {
     this.previewCarry = Math.round(r.carry);
     const cut = r.flight.landing.t * this.cfg.previewFraction;
     this.preview = r.flight.path.filter((q) => q.t <= cut);
-    this.previewLand = this.cfg.previewFraction >= 1 ? { x: r.flight.landing.x, y: r.flight.landing.y } : null;
-    // Skates and rolls slide on predictably; skips, tumbles and penalties are left as a landing only.
-    const k = r.ground.kind;
-    this.previewRest = this.previewLand && (k === 'skate' || k === 'roll') ? r.ground.path : [];
+    this.previewAim = input.aim;
   }
 
   private clearPreview() {
     this.preview = [];
     this.previewCarry = null;
-    this.previewLand = null;
-    this.previewRest = [];
   }
 
   private throwDisc(input: ThrowInput) {
@@ -1261,27 +1255,31 @@ export class HoleScene implements Scene {
         ctx.fillRect(Math.round(s.x), Math.round(y), 1, 1);
       }
     };
-    // The predicted flight, drawn like the real flight's trail (height lifts it up the screen).
+    // The start of the predicted flight, drawn like the real flight's trail (height lifts it up the screen).
     dots(this.preview, 'rgba(242,181,68,0.8)', 3);
-    if (!this.previewLand) return;
-    dots(this.previewRest, 'rgba(242,181,68,0.4)', 2);
-    const L = worldToScreen(cam, this.previewLand.x, this.previewLand.y);
-    const lx = Math.round(L.x);
-    const ly = Math.round(L.y);
-    ctx.strokeStyle = PAL.amber;
-    ctx.lineWidth = 1;
+    if (this.previewCarry === null) return;
+    // A wide half circle at the expected carry: it says how far, not where. The curve is the player's read.
+    const lie = worldToScreen(cam, this.state.lie.x, this.state.lie.y);
+    const r = this.previewCarry * cam.zoom;
+    const dir = Math.atan2(-Math.cos(this.previewAim), Math.sin(this.previewAim)); // canvas angle of the aim
+    const half = Math.PI / 2;
+    ctx.save();
+    ctx.lineCap = 'butt';
+    ctx.strokeStyle = 'rgba(242,181,68,0.18)';
+    ctx.lineWidth = Math.max(4, this.cfg.previewArcBandFt * 2 * cam.zoom);
     ctx.beginPath();
-    ctx.arc(lx + 0.5, ly + 0.5, 3.5, 0, Math.PI * 2);
+    ctx.arc(lie.x, lie.y, r, dir - half, dir + half);
     ctx.stroke();
-    ctx.fillStyle = PAL.amber;
-    ctx.fillRect(lx, ly, 1, 1);
-    if (this.previewCarry !== null) {
-      const label = `${power > 1.005 ? '~' : ''}${this.previewCarry} FT`;
-      const right = lx > VIEW_W - 44;
-      const tx = clamp(lx + (right ? -6 : 6), 2, VIEW_W - 2);
-      const ty = clamp(ly - 4, HUD_H + 2, VIEW_H - 10);
-      drawTextShadow(ctx, label, tx, ty, PAL.amber, PAL.night0, right ? 'right' : 'left');
-    }
+    ctx.strokeStyle = 'rgba(242,181,68,0.7)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 2]);
+    ctx.beginPath();
+    ctx.arc(lie.x, lie.y, r, dir - half, dir + half);
+    ctx.stroke();
+    ctx.restore();
+    const tx = clamp(lie.x + Math.cos(dir) * (r + 9), 16, VIEW_W - 16);
+    const ty = clamp(lie.y + Math.sin(dir) * (r + 9) - 3, HUD_H + 2, VIEW_H - 10);
+    drawTextShadow(ctx, `~${this.previewCarry} FT`, tx, ty, PAL.amber, PAL.night0, 'center');
   }
 
   private drawPowerMeter(ctx: CanvasRenderingContext2D, pull: Vec2) {

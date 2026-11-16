@@ -161,8 +161,10 @@ export const DEFAULT_CONFIG = {
   maxViewH: 400,
   grabRadiusPx: 22,
   cancelPullPx: 8,
-  /** Fraction of the flight time shown as the preview line. 1 = the whole flight, with a landing ring. */
-  previewFraction: 1,
+  /** Fraction of the flight time shown as the preview line. */
+  previewFraction: 0.3,
+  /** Half-width (feet) of the broad distance arc drawn at the expected carry while aiming. */
+  previewArcBandFt: 12,
 };
 
 export type Config = typeof DEFAULT_CONFIG;
@@ -225,6 +227,7 @@ export const CONFIG_META: ConfigMeta[] = [
   m('Input', 'maxPullPx', 30, 120, 1),
   m('Screen', 'maxViewH', 320, 440, 4),
   m('Input', 'previewFraction', 0, 1, 0.05),
+  m('Input', 'previewArcBandFt', 0, 40, 1),
 ];
 
 /** Live config. Mutated by the dev panel; everything else should treat it as read-only. */
