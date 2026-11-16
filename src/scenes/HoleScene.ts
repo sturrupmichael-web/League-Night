@@ -1407,7 +1407,7 @@ export class HoleScene implements Scene {
     panel(ctx, 14, y, VIEW_W - 28, 110, PAL.night1, PAL.amber);
     const title = s.pickedUp ? 'PICKED UP' : SCORE_LABEL[scoreKey(s.strokes, s.par)];
     drawText(ctx, `HOLE ${this.opts.holeNumber} · ${this.hole.name}`, VIEW_W / 2, y + 7, PAL.inkDim, 'center');
-    // Big title: draw the 3x5 font doubled.
+    // Big title: the game font at double size.
     drawBig(ctx, title, VIEW_W / 2, y + 20, s.strokes <= s.par ? PAL.amber : PAL.ink);
     drawText(ctx, `${s.strokes} THROWS · PAR ${s.par}`, VIEW_W / 2, y + 40, PAL.ink, 'center');
     if (s.penalties) drawText(ctx, `INCLUDES ${s.penalties} PENALTY`, VIEW_W / 2, y + 50, PAL.red, 'center');

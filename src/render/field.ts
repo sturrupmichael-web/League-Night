@@ -111,7 +111,7 @@ export class FieldRenderer {
     const L = this.last;
     // Nothing moved since the last frame: the image is still good.
     if (L.x === cam.x && L.y === cam.y && L.zoom === cam.zoom && L.ax === cam.ax && L.ay === cam.ay && L.shimmer === shimmer) {
-      ctx.putImageData(img, 0, 0);
+      this.blit(ctx);
       return;
     }
     Object.assign(L, { x: cam.x, y: cam.y, zoom: cam.zoom, ax: cam.ax, ay: cam.ay, shimmer });
@@ -195,6 +195,23 @@ export class FieldRenderer {
         d[o + 3] = 255;
       }
     }
-    ctx.putImageData(img, 0, 0);
+    this.blit(ctx);
+  }
+
+  /** The screen canvas is drawn at full device resolution with a scale transform, which
+   * putImageData ignores, so the field goes through a small canvas and drawImage. */
+  private buf: HTMLCanvasElement | null = null;
+  private blit(ctx: CanvasRenderingContext2D) {
+    if (typeof document === 'undefined') {
+      ctx.putImageData(this.img, 0, 0);
+      return;
+    }
+    if (!this.buf) {
+      this.buf = document.createElement('canvas');
+      this.buf.width = this.img.width;
+      this.buf.height = this.img.height;
+    }
+    this.buf.getContext('2d')!.putImageData(this.img, 0, 0);
+    ctx.drawImage(this.buf, 0, 0);
   }
 }

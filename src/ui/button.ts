@@ -30,17 +30,19 @@ export function drawButton(ctx: CanvasRenderingContext2D, b: Button) {
     ctx.fillRect(b.x, b.y + b.h, b.w, 1);
   }
   const cx = b.x + b.w / 2;
+  // Keep labels inside the frame (and clear of the cycle chevrons).
+  const fit = b.w - (b.cycle ? 12 : 4);
   // With no caption the value sits in the middle of the button instead of under an empty line.
   const vy = b.caption() ? b.y + 11 + dy : b.y + Math.floor((b.h - 5) / 2) + dy;
   if (b.primary && on) {
     panel(ctx, b.x, b.y + dy, b.w, b.h, b.pressed ? PAL.sandDark : PAL.amber, PAL.sandDark);
-    drawText(ctx, b.caption(), cx, b.y + 3 + dy, PAL.night3, 'center');
-    drawText(ctx, b.value(), cx, vy, PAL.night0, 'center');
+    drawText(ctx, b.caption(), cx, b.y + 3 + dy, PAL.night3, 'center', fit);
+    drawText(ctx, b.value(), cx, vy, PAL.night0, 'center', fit);
     return;
   }
   panel(ctx, b.x, b.y + dy, b.w, b.h, b.pressed ? PAL.night3 : PAL.night2, on ? PAL.dusk : PAL.night3);
-  drawText(ctx, b.caption(), cx, b.y + 3 + dy, on ? PAL.inkDim : PAL.night3, 'center');
-  drawText(ctx, b.value(), cx, vy, on ? PAL.ink : PAL.dusk, 'center');
+  drawText(ctx, b.caption(), cx, b.y + 3 + dy, on ? PAL.inkDim : PAL.night3, 'center', fit);
+  drawText(ctx, b.value(), cx, vy, on ? PAL.ink : PAL.dusk, 'center', fit);
   if (b.cycle) {
     // Small 2x3 chevrons hugging the edges, so they fit beside long values on narrow buttons.
     ctx.fillStyle = on ? PAL.haze : PAL.night3;
