@@ -1,5 +1,5 @@
 /**
- * Low-res canvas, integer-scaled to fit the window in device pixels. The width is always
+ * A 180-wide game-pixel view, integer-scaled to fit the window in device pixels. The width is always
  * 180 game pixels; the height is 320 on a 9:16 screen and grows on taller phones (up to
  * config.maxViewH) so the game fills the screen instead of leaving empty bands. It is
  * picked once when the game loads, so every layout can treat it as a constant.
@@ -56,11 +56,24 @@ export interface Screen {
   toView(clientX: number, clientY: number): { x: number; y: number };
 }
 
+/** Most device pixels per game pixel the backing canvas uses (keeps phones' fill cost sane). */
+const MAX_RES = 12;
+
 export function createScreen(canvas: HTMLCanvasElement): Screen {
-  canvas.width = VIEW_W;
-  canvas.height = VIEW_H;
   const ctx = canvas.getContext('2d', { alpha: false })!;
-  ctx.imageSmoothingEnabled = false;
+  // The canvas is backed at the screen's own resolution and everything is drawn through a
+  // scale transform: pixel art still lands on whole game pixels, but text is drawn sharp.
+  let res = 0;
+  const setRes = (r: number) => {
+    r = Math.max(1, Math.min(MAX_RES, Math.round(r)));
+    if (r === res) return;
+    res = r;
+    canvas.width = VIEW_W * r;
+    canvas.height = VIEW_H * r;
+    ctx.setTransform(r, 0, 0, r, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+  };
+  setRes(1);
 
   const fit = () => {
     const stage = canvas.parentElement!;
@@ -71,6 +84,7 @@ export function createScreen(canvas: HTMLCanvasElement): Screen {
     // Largest whole number of device pixels per game pixel that fits.
     let scale = Math.floor(Math.min((availW * dpr) / VIEW_W, (availH * dpr) / VIEW_H));
     if (scale < 1) scale = Math.min((availW * dpr) / VIEW_W, (availH * dpr) / VIEW_H);
+    setRes(Math.max(scale, 2));
     canvas.style.width = `${(VIEW_W * scale) / dpr}px`;
     canvas.style.height = `${(VIEW_H * scale) / dpr}px`;
     canvas.style.visibility = 'visible'; // hidden until sized, so the page never jumps

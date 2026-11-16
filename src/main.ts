@@ -4,6 +4,7 @@ import { Game } from './core/game';
 import { Input } from './core/input';
 import { startLoop } from './core/loop';
 import { createScreen } from './core/screen';
+import { loadFont } from './render/font';
 import { loadDevOverrides, mountDevPanel } from './dev/panel';
 import { loadDraft, mountEditor } from './dev/editor';
 import { parseHole } from './game/hole';
@@ -24,6 +25,7 @@ if (params.has('editor')) {
 } else boot();
 
 function boot() {
+  void loadFont(); // pixel glyphs stand in for the first few frames until it is ready
   const canvas = document.getElementById('game') as HTMLCanvasElement;
   const screen = createScreen(canvas);
   const input = new Input(screen);

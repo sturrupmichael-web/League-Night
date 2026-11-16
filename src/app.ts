@@ -930,7 +930,7 @@ export class App {
       ['SYNTHESISED IN YOUR BROWSER', PAL.ink],
       ['', ''],
       ['TYPE', PAL.haze],
-      ['AN ORIGINAL 3X5 PIXEL FONT', PAL.ink],
+      ['BARLOW CONDENSED · SIL OPEN FONT LICENSE', PAL.ink],
       ['', ''],
       ['BUILT WITH', PAL.haze],
       ['VITE · TYPESCRIPT · VITEST', PAL.ink],
