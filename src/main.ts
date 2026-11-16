@@ -61,7 +61,8 @@ function boot() {
   else if (params.has('hole')) {
     const n = Math.min(18, Math.max(1, Number(params.get('hole')) || 1));
     app.startSingleHole(n - 1, Number(params.get('seed')) || 5, params.get('course') ?? undefined);
-  } else app.title();
+  } else if (params.get('turn')) app.startTurnGame(params.get('turn')!);
+  else app.title();
 
   startLoop(
     (dt) => game.update(dt),

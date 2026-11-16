@@ -1,7 +1,7 @@
 /** LOST AND FOUND: discs shake loose from the trees. Tap them before they hit the pond. Leave the pinecones. */
 import { sfx } from '../../core/audio';
 import type { PointerInfo } from '../../core/input';
-import { VIEW_W } from '../../core/screen';
+import { EXTRA_H, VIEW_H, VIEW_W } from '../../core/screen';
 import { drawText, drawTextShadow } from '../../render/font';
 import { PAL } from '../../render/palette';
 import { fillCircle } from '../../render/sprites';
@@ -9,7 +9,9 @@ import { makeRng, type Rng } from '../../sim/rng';
 import { drawParkBackdrop, TurnGame } from './TurnGame';
 
 const DURATION = 25;
-const POND_Y = 262;
+const POND_Y = 262 + EXTRA_H;
+/** Taller drop on tall phones: speed and gravity scale with it so each disc takes the same time to fall. */
+const FALL = (POND_Y - 55) / (262 - 55);
 const COLORS = ['#ff8a3d', '#8fd16a', '#7cc4d8', '#c792ea', '#f2b544', '#e86a5e'];
 
 interface Faller { x: number; y: number; vy: number; vx: number; cone: boolean; color: string; caught: number }
@@ -78,7 +80,7 @@ export class LostAndFound extends TurnGame {
       this.items.push({
         x: 14 + this.rng() * (VIEW_W - 28),
         y: 40 + this.rng() * 30,
-        vy: 30 + this.rng() * 30 * heat,
+        vy: (30 + this.rng() * 30 * heat) * FALL,
         vx: (this.rng() - 0.5) * 20,
         cone,
         color: COLORS[Math.floor(this.rng() * COLORS.length)],
@@ -90,7 +92,7 @@ export class LostAndFound extends TurnGame {
         it.caught += dt;
         continue;
       }
-      it.vy += 60 * dt;
+      it.vy += 60 * FALL * dt;
       it.y += it.vy * dt;
       it.x += it.vx * dt + Math.sin(this.playT * 4 + it.x) * 12 * dt;
       if (it.y >= POND_Y) {
@@ -111,7 +113,7 @@ export class LostAndFound extends TurnGame {
     // Tree canopy along the top, pond along the bottom.
     for (let x = 0; x < VIEW_W; x += 16) fillCircle(ctx, x + 8, 38 + ((x * 7) % 9), 14, PAL.pineLight);
     ctx.fillStyle = PAL.water;
-    ctx.fillRect(0, POND_Y, VIEW_W, 60);
+    ctx.fillRect(0, POND_Y, VIEW_W, VIEW_H - POND_Y);
     ctx.fillStyle = PAL.waterLight;
     for (let x = (Math.floor(this.time * 10) % 12) - 12; x < VIEW_W; x += 12) ctx.fillRect(x, POND_Y + 6, 6, 1);
     for (const it of this.items) {

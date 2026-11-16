@@ -5,7 +5,10 @@
 import { sfx } from '../../core/audio';
 import type { PointerInfo } from '../../core/input';
 import type { Scene } from '../../core/scene';
-import { VIEW_H, VIEW_W } from '../../core/screen';
+import { EXTRA_H, VIEW_H, VIEW_W } from '../../core/screen';
+
+/** On tall phones the card sits in the middle of the extra height. */
+const CARD_DY = Math.round(EXTRA_H / 2);
 import { drawText, drawTextShadow, wrapText } from '../../render/font';
 import { PAL } from '../../render/palette';
 import { panel } from '../../render/sprites';
@@ -31,7 +34,7 @@ export abstract class TurnGame implements Scene {
     readonly info: TurnGameInfo,
     private onDone: (score: number, cred: number) => void,
   ) {
-    this.button = { x: 40, y: 236, w: 100, h: 22, caption: () => '', value: () => 'LET\'S GO', onTap: () => this.advance() };
+    this.button = { x: 40, y: 236 + CARD_DY, w: 100, h: 22, caption: () => '', value: () => 'LET\'S GO', onTap: () => this.advance() };
   }
 
   /** Cred paid for a score. */
@@ -93,15 +96,15 @@ export abstract class TurnGame implements Scene {
     if (this.phase === 'play') return;
     ctx.fillStyle = 'rgba(13,11,19,0.7)';
     ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-    panel(ctx, 14, 70, VIEW_W - 28, 196, PAL.night1, PAL.amber);
-    drawText(ctx, 'AT THE TURN', VIEW_W / 2, 80, PAL.haze, 'center');
-    drawBigText(ctx, this.info.name, VIEW_W / 2, 92, PAL.amber);
+    panel(ctx, 14, 70 + CARD_DY, VIEW_W - 28, 196, PAL.night1, PAL.amber);
+    drawText(ctx, 'AT THE TURN', VIEW_W / 2, 80 + CARD_DY, PAL.haze, 'center');
+    drawBigText(ctx, this.info.name, VIEW_W / 2, 92 + CARD_DY, PAL.amber);
     if (this.phase === 'intro') {
-      wrapText(this.info.how, VIEW_W - 48).forEach((l, i) => drawText(ctx, l, VIEW_W / 2, 120 + i * 9, PAL.ink, 'center'));
+      wrapText(this.info.how, VIEW_W - 48).forEach((l, i) => drawText(ctx, l, VIEW_W / 2, 120 + CARD_DY + i * 9, PAL.ink, 'center'));
     } else {
-      drawText(ctx, 'FINAL', VIEW_W / 2, 130, PAL.haze, 'center');
-      drawBigText(ctx, this.scoreText(this.score), VIEW_W / 2, 142, PAL.ink);
-      drawTextShadow(ctx, `+${this.cred(this.score)} CRED`, VIEW_W / 2, 176, PAL.amber, PAL.night0, 'center');
+      drawText(ctx, 'FINAL', VIEW_W / 2, 130 + CARD_DY, PAL.haze, 'center');
+      drawBigText(ctx, this.scoreText(this.score), VIEW_W / 2, 142 + CARD_DY, PAL.ink);
+      drawTextShadow(ctx, `+${this.cred(this.score)} CRED`, VIEW_W / 2, 176 + CARD_DY, PAL.amber, PAL.night0, 'center');
     }
     drawButton(ctx, this.button);
   }
