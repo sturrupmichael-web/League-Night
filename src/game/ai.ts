@@ -70,6 +70,47 @@ export function discRange(disc: Disc, cfg: Config, arm = 1): number {
   return r.total;
 }
 
+/** Flat, calm distance (where it stops) at each power step, per disc and arm: short throws lose lift, so distance is not linear in power. */
+const POWER_STEPS = [0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1];
+const curveCache = new Map<string, number[]>();
+function distanceCurve(disc: Disc, cfg: Config, arm: number): number[] {
+  const key = `${disc.id}:${cfg.armSpeed}:${arm}`;
+  let c = curveCache.get(key);
+  if (!c) {
+    c = POWER_STEPS.map((power) =>
+      simulateThrow(
+        { origin: { x: 0, y: 0 }, aim: 0, power, release: idealRelease(disc) * 0.5, style: 'backhand', hand: 'right', armMul: arm },
+        disc,
+        { terrain: flatTerrain(), wind: CALM },
+        1,
+        cfg,
+      ).total,
+    );
+    curveCache.set(key, c);
+  }
+  return c;
+}
+
+/** The power that sends `disc` about `ft` on flat ground in calm air. */
+export function powerFor(disc: Disc, ft: number, cfg: Config, arm = 1): number {
+  const c = distanceCurve(disc, cfg, arm);
+  if (ft <= c[0]) return POWER_STEPS[0];
+  for (let i = 1; i < c.length; i++) {
+    if (ft <= c[i]) return POWER_STEPS[i - 1] + ((POWER_STEPS[i] - POWER_STEPS[i - 1]) * (ft - c[i - 1])) / Math.max(1e-6, c[i] - c[i - 1]);
+  }
+  return 1;
+}
+
+/** How far `disc` goes at `power` on flat ground in calm air (inverse of powerFor). */
+function distanceAt(disc: Disc, power: number, cfg: Config, arm: number): number {
+  const c = distanceCurve(disc, cfg, arm);
+  if (power <= POWER_STEPS[0]) return c[0] * (power / POWER_STEPS[0]);
+  for (let i = 1; i < c.length; i++) {
+    if (power <= POWER_STEPS[i]) return c[i - 1] + ((c[i] - c[i - 1]) * (power - POWER_STEPS[i - 1])) / (POWER_STEPS[i] - POWER_STEPS[i - 1]);
+  }
+  return c[c.length - 1] * (power / 1);
+}
+
 /** Choose a disc for a throw of `ft`: the slowest disc that gets there, else the longest. */
 export function pickDisc(discs: Disc[], ft: number, cfg: Config, arm = 1): Disc {
   const throwers = discs.filter((d) => d.type !== 'putter' || ft < 140);
@@ -92,10 +133,9 @@ const POWER_FAN = [0.88, 1, 1.1];
 export function planThrow(env: AiEnv, from: Vec2, ai: AiProfile, discs: Disc[], cfg: Config): { input: ThrowInput; disc: Disc } {
   const basket = env.hole.basket;
   const d = dist(from, basket);
-  const disc = pickDisc(discs, d, cfg, ai.arm ?? 1);
-  const range = discRange(disc, cfg, ai.arm ?? 1);
+  const disc = pickDisc(discs, d, cfg, Math.min(1, ai.arm ?? 1));
   const base = angleFromDir(basket.x - from.x, basket.y - from.y);
-  const p0 = clamp(d / range, 0.3, 1);
+  const p0 = clamp(powerFor(disc, d, cfg, ai.arm ?? 1), 0.25, 1);
   let best: { input: ThrowInput; cost: number } | null = null;
   for (const off of AIM_FAN) {
     for (const pm of POWER_FAN) {
@@ -144,12 +184,15 @@ export function playAiHole(env: AiEnv, ai: AiProfile, discs: Disc[], seed: numbe
       continue;
     }
     const plan = planThrow(env, from, ai, discs, cfg);
-    const sigAim = (1 + (1 - skill) * 6) * DEG;
-    const sigPow = 0.02 + (1 - skill) * 0.08;
+    // Spread tuned so the ladder runs from about 12 under (Rosa) to about 11 over (Lou) per 18.
+    const sigAim = (3 + (1 - skill) * 18) * DEG;
+    const sigPow = 0.06 + (1 - skill) * 0.24;
     const input: ThrowInput = {
       ...plan.input,
       aim: plan.input.aim + gaussian(rng) * sigAim,
-      power: clamp(plan.input.power * (1 + gaussian(rng) * sigPow), 0.2, 1.05),
+      // Power error is a share of the distance, not of the power: short throws sit where distance
+      // changes fast with power, so a power-share error would punish big arms far more than skill says.
+      power: plan.input.power >= 1 ? clamp(plan.input.power * (1 + gaussian(rng) * sigPow), 0.2, 1.05) : clamp(powerFor(plan.disc, distanceAt(plan.disc, plan.input.power, cfg, ai.arm ?? 1) * (1 + gaussian(rng) * sigPow), cfg, ai.arm ?? 1), 0.2, 1.05),
     };
     const tseed = mixSeed(seed, n);
     const r: ThrowResult = simulateThrow(input, plan.disc, { terrain: env.terrain, wind: env.wind, basket }, tseed, cfg);
