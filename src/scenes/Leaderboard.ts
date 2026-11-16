@@ -24,7 +24,7 @@ export class LeaderboardScene extends MenuScene {
   private toggles: { b: { x: number; y: number; w: number; h: number }; on: () => boolean }[] = [];
 
   constructor(
-    private net: Promise<LeaderboardApi & { label: string }>,
+    private net: Promise<LeaderboardApi & { label: string; signedIn?(): boolean }>,
     private actions: { back: () => void; changeName: () => void },
     start: { courseId?: string; holes?: 9 | 18 } = {},
   ) {
@@ -63,7 +63,8 @@ export class LeaderboardScene extends MenuScene {
     this.net
       .then((api) => {
         // The local stand-in only knows this browser's rounds: say so.
-        this.label = api.label === 'ONLINE' ? '' : api.label;
+        // Guests' names stay with this browser; a Google sign-in keeps them everywhere.
+        this.label = api.label !== 'ONLINE' ? api.label : api.signedIn?.() === false ? 'GUEST · SIGN IN ON MICHAELSTURRUP.COM' : '';
         return Promise.all([api.board(key), api.myBest(key).catch(() => null), api.myName().catch(() => null)]);
       })
       .then(([rows, mine, name]) => {

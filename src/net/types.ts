@@ -121,8 +121,15 @@ export const NAME_MAX = 12;
 
 export interface NetBackend extends LeaderboardApi {
   readonly label: string;
-  /** Sign in (anonymously) if needed and return the player id. */
+  /**
+   * Return the player id: the Google account signed in on michaelsturrup.com if there is one,
+   * otherwise this browser's guest account (signed in anonymously if needed).
+   */
   me(): Promise<string>;
+  /** True when playing as the site's Google account. Backends without accounts leave it out. */
+  signedIn?(): boolean;
+  /** Called with the new player id after a sign-in or sign-out elsewhere on the site. */
+  onAccountChange?(cb: (id: string) => void): () => void;
   createMatch(settings: MatchSettings, meta: PlayerMeta, seed: number): Promise<Match>;
   joinMatch(code: string, meta: PlayerMeta): Promise<Match>;
   listMatches(): Promise<Match[]>;
