@@ -1,11 +1,13 @@
 /**
- * The real backend: Supabase with anonymous sign-in. Matches are only changed through the
+ * The real backend: Supabase. Players signed in with Google anywhere on michaelsturrup.com play
+ * as that account (see siteSession.ts); everyone else gets an anonymous guest account. Matches are only changed through the
  * ln_* database functions; throws and chat are plain inserts that row-level security and the
  * ln_check_throw trigger police (see supabase/migrations).
  */
 import { createClient, type RealtimeChannel, type SupabaseClient } from '@supabase/supabase-js';
 import type { RoundState } from '../game/round';
 import { cleanName, GAME_VERSION } from './leaderboard';
+import { SITE_KEY, SiteAuth } from './siteSession';
 import type { BoardKey, BoardRow, ChatRow, Match, MatchBundle, MatchSettings, NetBackend, NetEvent, PlayerMeta, PostedScore, ThrowPayload, ThrowRow } from './types';
 import { MAX_CHAT } from './types';
 
@@ -38,22 +40,76 @@ const fail = (e: { message?: string } | null, fallback: string): never => {
 
 export class SupabaseBackend implements NetBackend {
   readonly label = 'ONLINE';
+  /** The client for the player's current account: the guest one or the shared Google one. */
   private sb: SupabaseClient;
+  private guestSb: SupabaseClient;
+  private siteSb: SupabaseClient | null = null;
+  private site: SiteAuth;
   private uid: string | null = null;
+  private guestUid: string | null = null;
   private channel: RealtimeChannel | null = null;
   private listeners = new Set<(e: NetEvent) => void>();
+  private accountListeners = new Set<(id: string) => void>();
 
-  constructor(url: string, key: string) {
-    this.sb = createClient(url, key, { auth: { persistSession: true, autoRefreshToken: true, storageKey: 'leaguenight.auth' } });
+  constructor(private url: string, private key: string, site?: SiteAuth) {
+    this.site = site ?? new SiteAuth({ url, key });
+    // Guests keep their own key: a guest belongs to League Night, a Google account to the site.
+    this.guestSb = createClient(url, key, { auth: { persistSession: true, autoRefreshToken: true, storageKey: 'leaguenight.auth' } });
+    this.sb = this.guestSb;
+    // Signed in or out on another page of the site: switch accounts.
+    globalThis.addEventListener?.('storage', (e: StorageEvent) => {
+      if ((e.key === SITE_KEY || e.key === null) && this.uid) void this.me().catch(() => {});
+    });
+  }
+
+  /** True when playing as the site's Google account rather than a guest. */
+  signedIn(): boolean {
+    return this.site.userId() !== null;
+  }
+
+  onAccountChange(cb: (id: string) => void): () => void {
+    this.accountListeners.add(cb);
+    return () => this.accountListeners.delete(cb);
+  }
+
+  /** A client that sends the shared Google session's token, read fresh for every request. */
+  private siteClient(): SupabaseClient {
+    return (this.siteSb ??= createClient(this.url, this.key, { accessToken: () => this.site.token() }));
   }
 
   async me(): Promise<string> {
-    if (this.uid) return this.uid;
-    const { data } = await this.sb.auth.getSession();
-    if (data.session?.user) return (this.uid = data.session.user.id);
-    const { data: d, error } = await this.sb.auth.signInAnonymously();
-    if (error || !d.user) fail(error, 'COULD NOT SIGN IN');
-    return (this.uid = d.user!.id);
+    const siteId = this.site.userId();
+    if (siteId) {
+      if (!(await this.site.token())) {
+        // Still there: the server couldn't be reached. Gone: the sign-in lapsed, carry on as a guest.
+        if (this.site.userId()) fail(null, "CAN'T REACH YOUR SIGN-IN · TRY AGAIN");
+        return this.me();
+      }
+      return this.use(siteId, this.siteClient());
+    }
+    if (!this.guestUid) {
+      const { data } = await this.guestSb.auth.getSession();
+      if (data.session?.user) this.guestUid = data.session.user.id;
+      else {
+        const { data: d, error } = await this.guestSb.auth.signInAnonymously();
+        if (error || !d.user) fail(error, 'COULD NOT SIGN IN');
+        this.guestUid = d.user!.id;
+      }
+    }
+    return this.use(this.guestUid, this.guestSb);
+  }
+
+  /** Switch to an account's client, moving the live updates across. */
+  private use(id: string, client: SupabaseClient): string {
+    if (id === this.uid) return id;
+    const before = this.uid;
+    if (this.channel) void this.sb.removeChannel(this.channel);
+    this.channel = null;
+    this.sb = client;
+    this.uid = id;
+    if (this.listeners.size) this.openChannel();
+    if (before) this.accountListeners.forEach((l) => l(id));
+    return id;
   }
 
   async createMatch(settings: MatchSettings, meta: PlayerMeta, seed: number): Promise<Match> {
@@ -120,7 +176,7 @@ export class SupabaseBackend implements NetBackend {
 
   subscribe(cb: (e: NetEvent) => void): () => void {
     this.listeners.add(cb);
-    if (!this.channel) void this.openChannel();
+    if (!this.channel) void this.me().then(() => this.channel ?? this.openChannel(), () => {});
     return () => {
       this.listeners.delete(cb);
       if (!this.listeners.size && this.channel) {
@@ -130,8 +186,7 @@ export class SupabaseBackend implements NetBackend {
     };
   }
 
-  private async openChannel() {
-    await this.me();
+  private openChannel() {
     const emit = (e: NetEvent) => this.listeners.forEach((l) => l(e));
     // Row-level security filters these to the player's own matches.
     this.channel = this.sb

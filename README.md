@@ -60,6 +60,16 @@ or pull it back down, and nothing happens. Inside 8 ft, just tap the disc.
 **Rules:** penalties (water, out of bounds) add a stroke and drop you where the disc went out.
 A hole stops at par + 5. Casual rounds get 3 mulligans (rewind your last throw).
 
+## Accounts
+
+Friend matches and the leaderboard run on Michael's shared Supabase project. A player signed in
+with Google anywhere on michaelsturrup.com (the main page's **Sign in with Google**) plays as that
+account, with the leaderboard name it already has: League Night reads the site-wide session from
+`localStorage` key `michaelsturrup.auth.v1` (see `src/net/siteSession.ts` and
+`docs/site-sign-in.md` in the sturrupmichael-web.github.io repo). Everyone else plays as an
+anonymous guest kept under `leaguenight.auth`, as before. Signing in or out in another tab switches
+accounts on the spot.
+
 ## Hole format
 
 Courses live in `src/content/courses/*.json`. Units are feet; `y` points from tee toward the basket.

@@ -109,8 +109,25 @@ export class Friends {
     this.net = net;
     ls.set(USED_KEY, '1');
     this.unsub ??= net.subscribe((e) => void this.onEvent(e.matchId));
+    net.onAccountChange?.((id) => this.accountChanged(id));
     void this.refreshTurns();
     return net;
+  }
+
+  /** Signed in or out on another page of the site: the matches on screen belong to the old account. */
+  private accountChanged(id: string) {
+    if (id === this.meId) return;
+    this.meId = id;
+    this.queue = [];
+    this.turnSeen.clear();
+    this.yourTurn = 0;
+    const onScreen = this.cur !== null || this.inHole;
+    this.inHole = false;
+    if (onScreen) {
+      this.menu();
+      this.status = this.net?.signedIn?.() ? 'SIGNED IN · SHOWING YOUR MATCHES' : 'SIGNED OUT · PLAYING AS A GUEST';
+    }
+    void this.refreshTurns();
   }
 
   // ---------- Live updates and alerts ----------
@@ -171,6 +188,13 @@ export class Friends {
 
   // ---------- Menus ----------
 
+  /** Who you're playing as, when the backend has accounts. */
+  private accountLine(): string {
+    const s = this.net?.signedIn?.();
+    if (s === undefined) return '';
+    return s ? 'SIGNED IN WITH GOOGLE' : 'GUEST · SIGN IN ON MICHAELSTURRUP.COM';
+  }
+
   menu() {
     this.cur = null;
     const backendLabel = () => this.net?.label ?? '';
@@ -192,6 +216,8 @@ export class Friends {
           if (this.status) drawText(ctx, this.status, VIEW_W / 2, 236, PAL.red, 'center');
           const l = backendLabel();
           if (l) drawText(ctx, l, VIEW_W / 2, 306 + EXTRA_H, PAL.dusk, 'center');
+          const who = this.accountLine();
+          if (who) drawText(ctx, who, VIEW_W / 2, 296 + EXTRA_H, PAL.dusk, 'center');
         },
       }),
     );
