@@ -68,6 +68,16 @@ var e = {
 	hammerTumbleMax: 16,
 	puttRangeFt: 70,
 	gimmeFt: 8,
+	puttMeter: 1,
+	puttMeterRiseS: 1.1,
+	puttMeterZoneNear: .26,
+	puttMeterZoneFar: .04,
+	puttMeterNearFt: 10,
+	puttMeterFarFt: 70,
+	puttMeterZoneCurve: 3,
+	puttMeterAimPerPx: .0018,
+	puttMeterCancelPx: 36,
+	puttMeterMinHoldS: .12,
 	puttFullSwipePx: 150,
 	puttMinSwipePx: 10,
 	puttParkSpeed: 25,
@@ -80,6 +90,7 @@ var e = {
 	puttLaunchDeg: 12,
 	puttReleaseHeight: 3,
 	puttWindDrift: .12,
+	puttWindDriftV3: .5,
 	puttWobbleFromFt: 20,
 	puttWobbleDeg: 1.6,
 	puttPowerWobble: .06,
@@ -27601,8 +27612,8 @@ function P(e, t, n) {
 	return Math.sqrt(Math.max(1, r * r + 2 * y * (n.puttReleaseHeight - i)));
 }
 var F = (e, t) => t.distance > 0 ? t.rise * e / t.distance : 0;
-function I(e, t, n, r, i = 2) {
-	let a = n(), o = n(), s = Math.max(0, (t.distance - r.puttWobbleFromFt) / 30), c = (n() * 2 - 1) * r.puttWobbleDeg * v * s, l = 1 + (n() * 2 - 1) * r.puttPowerWobble * s, u = i >= 2 ? n() : 0, d = r.puttLaunchDeg * v, f = j(e.power * l, r), p = f * Math.cos(d), m = f * Math.sin(d), h = p * Math.tan(e.aim + c), g = e.bend * r.puttBendAccel, _ = (t.crosswind ?? 0) * r.puttWindDrift, b = 0, S = 0, C = r.puttReleaseHeight, w = 0, T = [{
+function I(e, t, n, r, i = 3) {
+	let a = n(), o = n(), s = Math.max(0, (t.distance - r.puttWobbleFromFt) / 30), c = (n() * 2 - 1) * r.puttWobbleDeg * v * s, l = 1 + (n() * 2 - 1) * r.puttPowerWobble * s, u = i >= 2 ? n() : 0, d = r.puttLaunchDeg * v, f = j(e.power * l, r), p = f * Math.cos(d), m = f * Math.sin(d), h = p * Math.tan(e.aim + c), g = e.bend * r.puttBendAccel, _ = (t.crosswind ?? 0) * (i >= 3 ? r.puttWindDriftV3 : r.puttWindDrift), b = 0, S = 0, C = r.puttReleaseHeight, w = 0, T = [{
 		u: b,
 		v: S,
 		h: C,
@@ -28183,7 +28194,7 @@ function ue(e, t, n, r, i, a, o = 0) {
 	};
 }
 function de(e) {
-	return e === void 0 ? 1 : typeof e == "number" && Number.isInteger(e) && e >= 1 && e <= 2 ? e : 0;
+	return e === void 0 ? 1 : typeof e == "number" && Number.isInteger(e) && e >= 1 && e <= 3 ? e : 0;
 }
 // src/net/verifyRound.ts
 var fe = [9, 18];

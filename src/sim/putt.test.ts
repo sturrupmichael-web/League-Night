@@ -237,3 +237,16 @@ describe('putting physics v2 at the basket', () => {
     expect(seen.has('rim')).toBe(true);
   });
 });
+
+describe('wind on putts', () => {
+  const r = (d: number): Read => straight(idealPuttPower(d, 0, cfg));
+  const drift = (d: number, pv: number) => resolvePutt(r(d), { distance: d, rise: 0, crosswind: 10 * 5280 / 3600 }, () => 0.5, cfg, pv).atBasket!.u;
+  it('v3 blows a 10 mph, 25 ft putt out of the chains; v2 barely moves it', () => {
+    expect(Math.abs(drift(25, 2))).toBeLessThan(cfg.chainHalfWidth / 2);
+    expect(drift(25, 3)).toBeGreaterThan(cfg.chainHalfWidth);
+  });
+  it('drift grows with distance', () => {
+    expect(drift(50, 3)).toBeGreaterThan(drift(25, 3) * 1.5);
+  });
+});
+
