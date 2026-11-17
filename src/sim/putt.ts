@@ -84,9 +84,11 @@ export type PuttOutcome = 'chains' | 'rim' | 'spit' | 'band' | 'over' | 'cage' |
  *  1: chains are a hard box; only fast off-centre putts spit out.
  *  2: chain edges, high hits and rockets can spit out, soft putts die into the chains, the
  *     outer chains can grab a near miss, rim hits can pop in, top-band hits bounce off.
+ *  3: as 2, but crosswind pushes the putt much harder (puttWindDriftV3), so long putts in
+ *     wind have to be aimed off the chains.
  * Never change what an existing version does: add a new one.
  */
-export const PUTT_PHYSICS = 2;
+export const PUTT_PHYSICS = 3;
 
 export interface PuttSetup {
   /** Distance to the basket, ft. */
@@ -209,7 +211,7 @@ export function resolvePutt(read: Extract<SwipeRead, { cancel: false }>, setup: 
   let vz = speed * Math.sin(th);
   let vu = vf * Math.tan(read.aim + aimWobble);
   const bendAcc = read.bend * cfg.puttBendAccel;
-  const windAcc = (setup.crosswind ?? 0) * cfg.puttWindDrift;
+  const windAcc = (setup.crosswind ?? 0) * (physics >= 3 ? cfg.puttWindDriftV3 : cfg.puttWindDrift);
   let u = 0;
   let v = 0;
   let h = cfg.puttReleaseHeight;

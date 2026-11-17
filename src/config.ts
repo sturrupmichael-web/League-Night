@@ -113,12 +113,14 @@ export const DEFAULT_CONFIG = {
   puttMeter: 1,
   /** Seconds for the meter to climb from empty to the top (it then falls back at the same pace). */
   puttMeterRiseS: 1.1,
-  /** The bar's top is this many times a perfect putt's power... */
-  puttMeterTopMul: 4,
-  /** ...but never lower than this (so short putts aren't cramped)... */
-  puttMeterTopMin: 1.2,
-  /** ...or higher than this. Mul 4 / min 1.2 / max 2.6 make the blue zone half the bar share of mul 2 / 0.6 / 1.3. */
-  puttMeterTopMax: 2.6,
+  /** Share of the bar the blue zone fills on a putt of puttMeterNearFt or closer... */
+  puttMeterZoneNear: 0.26,
+  /** ...and from puttMeterFarFt out. */
+  puttMeterZoneFar: 0.04,
+  puttMeterNearFt: 10,
+  puttMeterFarFt: 70,
+  /** How fast it narrows: higher stays wide longer near the basket and then drops off. */
+  puttMeterZoneCurve: 3,
   /** Aim (radians) per view px the thumb slides sideways while holding. */
   puttMeterAimPerPx: 0.0018,
   /** Sliding the thumb this far down (view px) before letting go calls the putt off. */
@@ -143,7 +145,10 @@ export const DEFAULT_CONFIG = {
   puttSpeedFull: 75,
   puttLaunchDeg: 12,
   puttReleaseHeight: 3,
+  /** Sideways push per ft/s of crosswind (putt physics v1/v2; never change: old replays use it). */
   puttWindDrift: 0.12,
+  /** The same for putt physics v3 and later. */
+  puttWindDriftV3: 0.5,
   /** Putts from beyond this distance pick up a random release wobble... */
   puttWobbleFromFt: 20,
   /** ...of up to this many degrees of aim per 30 ft past it... */
@@ -225,7 +230,9 @@ export const CONFIG_META: ConfigMeta[] = [
   m('Ground', 'skipMinSpeed', 10, 90, 1),
   m('Putting', 'puttMeter', 0, 1, 1),
   m('Putting', 'puttMeterRiseS', 0.4, 3, 0.05),
-  m('Putting', 'puttMeterTopMul', 1.2, 6, 0.1),
+  m('Putting', 'puttMeterZoneNear', 0.05, 0.6, 0.01),
+  m('Putting', 'puttMeterZoneFar', 0.01, 0.3, 0.005),
+  m('Putting', 'puttMeterZoneCurve', 0.5, 5, 0.1),
   m('Putting', 'puttMeterAimPerPx', 0, 0.006, 0.0002),
   m('Putting', 'puttFullSwipePx', 60, 260, 1),
   m('Putting', 'puttSpeedFull', 40, 110, 1),
@@ -240,6 +247,7 @@ export const CONFIG_META: ConfigMeta[] = [
   m('Putting', 'puttPowerWobble', 0, 0.3, 0.01),
   m('Putting', 'puttGuideFt', 0, 70, 1),
   m('Putting', 'puttTapGuardS', 0, 1, 0.05),
+  m('Putting', 'puttWindDriftV3', 0, 2, 0.05),
   m('Putting', 'chainHalfWidth', 0.3, 1.5, 0.05),
   m('Putting', 'spitRatio', 1, 1.5, 0.01),
   m('Putting', 'blowThroughRatio', 1, 2, 0.01),

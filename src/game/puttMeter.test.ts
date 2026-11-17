@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG } from '../config';
-import { meterAim, meterFill, meterPower, meterRelease, meterTop } from './puttMeter';
+import { meterAim, meterFill, meterPower, meterRelease, meterTop, meterZoneShare } from './puttMeter';
 import { puttPowerWindow, resolvePutt } from '../sim/putt';
 import { makeRng } from '../sim/rng';
 
@@ -32,6 +32,17 @@ describe('putt meter', () => {
     };
     expect(share(15)).toBeGreaterThan(share(30));
     expect(share(30)).toBeGreaterThan(share(60));
+  });
+
+  it('sizes the blue zone by distance: wide by the basket, a sliver at the edge of range', () => {
+    const share = (d: number) => {
+      const w = puttPowerWindow(d, 0, cfg);
+      return (w.high - w.low) / meterTop(d, 0, cfg);
+    };
+    expect(share(12)).toBeCloseTo(meterZoneShare(12, cfg), 3);
+    expect(meterZoneShare(10, cfg)).toBeCloseTo(cfg.puttMeterZoneNear);
+    expect(share(70)).toBeCloseTo(cfg.puttMeterZoneFar, 3);
+    expect(share(50)).toBeLessThan(0.06);
   });
 
   it('lets go into a putt read, or calls it off for a tap or a slide down', () => {

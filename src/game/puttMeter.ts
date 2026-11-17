@@ -10,10 +10,16 @@ import type { Config } from '../config';
 import { clamp } from '../sim/math';
 import { puttPowerWindow, type SwipeRead } from '../sim/putt';
 
-/** Top of the bar for this putt, in putt power. Scaled to the putt so short putts get a roomy window. */
+/** Share of the bar the blue zone takes for a putt this long: wide by the basket, a sliver from the edge of range. */
+export function meterZoneShare(distance: number, cfg: Config): number {
+  const t = clamp((distance - cfg.puttMeterNearFt) / Math.max(1, cfg.puttMeterFarFt - cfg.puttMeterNearFt), 0, 1);
+  return cfg.puttMeterZoneFar + (cfg.puttMeterZoneNear - cfg.puttMeterZoneFar) * (1 - t) ** cfg.puttMeterZoneCurve;
+}
+
+/** Top of the bar for this putt, in putt power: picked so the blue zone fills meterZoneShare of it. */
 export function meterTop(distance: number, rise: number, cfg: Config): number {
   const w = puttPowerWindow(distance, rise, cfg);
-  return clamp(w.ideal * cfg.puttMeterTopMul, cfg.puttMeterTopMin, cfg.puttMeterTopMax);
+  return Math.max((w.high - w.low) / meterZoneShare(distance, cfg), w.high * 1.15);
 }
 
 /** 0..1 bar fill after holding for `heldS` seconds: up, down, up... */

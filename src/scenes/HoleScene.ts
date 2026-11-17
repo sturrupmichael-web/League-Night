@@ -28,7 +28,7 @@ import { HoleRenderer } from '../render/topdown';
 import type { Disc } from '../sim/discs';
 import type { Hand, Style, ThrowInput } from '../sim/flight';
 import type { RestKind } from '../sim/ground';
-import { angleFromDir, clamp, dist, lerp, type PathPoint, type Vec2 } from '../sim/math';
+import { angleFromDir, clamp, dist, lerp, MPH_TO_FTPS, type PathPoint, type Vec2 } from '../sim/math';
 import { meterAim, meterPower, meterRelease, meterTop } from '../game/puttMeter';
 import { describeMiss, type PuttOutcome, type PuttResult, type PuttSetup, previewPutt, PUTT_PHYSICS, puttPowerWindow, readSwipe, resolvePutt, type SwipePoint } from '../sim/putt';
 import { makeRng, mixSeed } from '../sim/rng';
@@ -1189,11 +1189,15 @@ export class HoleScene implements Scene {
 
     // Read of the putt: distance, slope, wind.
     const y = HUD_H + 4;
-    panel(ctx, 3, y, 56, 22, 'rgba(13,11,19,0.8)', PAL.night3);
+    const cross = this.puttSetup(proj).crosswind ?? 0;
+    const crossMph = Math.round(Math.abs(cross) / MPH_TO_FTPS);
+    panel(ctx, 3, y, crossMph > 0 ? 78 : 56, crossMph > 0 ? 30 : 22, 'rgba(13,11,19,0.8)', PAL.night3);
     drawText(ctx, `${Math.round(proj.distance)} FT PUTT`, 6, y + 4, PAL.ink);
     const rise = proj.rise;
     const slope = Math.abs(rise) < 0.5 ? 'FLAT' : rise > 0 ? `UPHILL ${rise.toFixed(1)}` : `DOWNHILL ${(-rise).toFixed(1)}`;
     drawText(ctx, slope, 6, y + 12, rise > 0.5 ? PAL.amber : rise < -0.5 ? PAL.waterLight : PAL.inkDim);
+    // Crosswind: which way it pushes the putt, so the player knows to aim off the chains.
+    if (crossMph > 0) drawText(ctx, cross > 0 ? `WIND PUSHES RIGHT ${crossMph}` : `WIND PUSHES LEFT ${crossMph}`, 6, y + 20, crossMph >= 6 ? PAL.amber : PAL.inkDim);
 
     if (this.mode === 'aim' && this.cfg.puttMeter) {
       this.renderMeterAim(ctx, proj);
