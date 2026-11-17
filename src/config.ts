@@ -109,6 +109,20 @@ export const DEFAULT_CONFIG = {
   puttRangeFt: 70,
   /** Lie distance (ft) for a tap-to-drop gimme. */
   gimmeFt: 8,
+  /** 1 = hold-to-charge power meter, 0 = the old swipe-up putt. */
+  puttMeter: 1,
+  /** Seconds for the meter to climb from empty to the top (it then falls back at the same pace). */
+  puttMeterRiseS: 1.1,
+  /** The bar's top is this many times a perfect putt's power... */
+  puttMeterTopMul: 2,
+  /** ...but never lower than this (so short putts aren't cramped)... capped at 1.3. */
+  puttMeterTopMin: 0.6,
+  /** Aim (radians) per view px the thumb slides sideways while holding. */
+  puttMeterAimPerPx: 0.0018,
+  /** Sliding the thumb this far down (view px) before letting go calls the putt off. */
+  puttMeterCancelPx: 36,
+  /** Shorter holds are taps, not putts (s). */
+  puttMeterMinHoldS: 0.12,
   /** Swipe length (view px) for full putt power. */
   puttFullSwipePx: 150,
   puttMinSwipePx: 10,
@@ -207,6 +221,10 @@ export const CONFIG_META: ConfigMeta[] = [
   m('Ground', 'rollerChance', 0, 1, 0.05),
   m('Ground', 'skipChance', 0, 1, 0.05),
   m('Ground', 'skipMinSpeed', 10, 90, 1),
+  m('Putting', 'puttMeter', 0, 1, 1),
+  m('Putting', 'puttMeterRiseS', 0.4, 3, 0.05),
+  m('Putting', 'puttMeterTopMul', 1.2, 4, 0.1),
+  m('Putting', 'puttMeterAimPerPx', 0, 0.006, 0.0002),
   m('Putting', 'puttFullSwipePx', 60, 260, 1),
   m('Putting', 'puttSpeedFull', 40, 110, 1),
   m('Putting', 'puttLaunchDeg', 4, 25, 0.5),
