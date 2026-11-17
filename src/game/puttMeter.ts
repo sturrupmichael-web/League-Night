@@ -13,7 +13,7 @@ import { puttPowerWindow, type SwipeRead } from '../sim/putt';
 /** Top of the bar for this putt, in putt power. Scaled to the putt so short putts get a roomy window. */
 export function meterTop(distance: number, rise: number, cfg: Config): number {
   const w = puttPowerWindow(distance, rise, cfg);
-  return clamp(w.ideal * cfg.puttMeterTopMul, cfg.puttMeterTopMin, 1.3);
+  return clamp(w.ideal * cfg.puttMeterTopMul, cfg.puttMeterTopMin, cfg.puttMeterTopMax);
 }
 
 /** 0..1 bar fill after holding for `heldS` seconds: up, down, up... */

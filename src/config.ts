@@ -114,9 +114,11 @@ export const DEFAULT_CONFIG = {
   /** Seconds for the meter to climb from empty to the top (it then falls back at the same pace). */
   puttMeterRiseS: 1.1,
   /** The bar's top is this many times a perfect putt's power... */
-  puttMeterTopMul: 2,
-  /** ...but never lower than this (so short putts aren't cramped)... capped at 1.3. */
-  puttMeterTopMin: 0.6,
+  puttMeterTopMul: 4,
+  /** ...but never lower than this (so short putts aren't cramped)... */
+  puttMeterTopMin: 1.2,
+  /** ...or higher than this. Mul 4 / min 1.2 / max 2.6 make the blue zone half the bar share of mul 2 / 0.6 / 1.3. */
+  puttMeterTopMax: 2.6,
   /** Aim (radians) per view px the thumb slides sideways while holding. */
   puttMeterAimPerPx: 0.0018,
   /** Sliding the thumb this far down (view px) before letting go calls the putt off. */
@@ -223,7 +225,7 @@ export const CONFIG_META: ConfigMeta[] = [
   m('Ground', 'skipMinSpeed', 10, 90, 1),
   m('Putting', 'puttMeter', 0, 1, 1),
   m('Putting', 'puttMeterRiseS', 0.4, 3, 0.05),
-  m('Putting', 'puttMeterTopMul', 1.2, 4, 0.1),
+  m('Putting', 'puttMeterTopMul', 1.2, 6, 0.1),
   m('Putting', 'puttMeterAimPerPx', 0, 0.006, 0.0002),
   m('Putting', 'puttFullSwipePx', 60, 260, 1),
   m('Putting', 'puttSpeedFull', 40, 110, 1),
