@@ -301,7 +301,7 @@ export class HoleScene implements Scene {
   /** Exposed for smoke tests. */
   get debug() {
     const g = this.gesture;
-    const meter = g?.kind === 'meter' && this.puttViewVisible() ? { power: meterPower(this.time - g.t0, g.top, this.cfg), ...this.puttWindow() } : null;
+    const meter = g?.kind === 'meter' && this.puttViewVisible() ? { power: meterPower(this.time - g.t0, g.top, this.cfg), ...this.puttWindow(), aimFixPx: this.windAimFixPx() } : null;
     return { mode: this.mode, state: this.state, lie: this.state.lie, disc: this.disc.id, puttView: this.puttViewVisible(), meter };
   }
 
@@ -802,6 +802,15 @@ export class HoleScene implements Scene {
     sfx.play('putt');
     this.toast = null;
     this.hint = null;
+  }
+
+  /** For test bots: how far to slide the thumb (px) to cancel the crosswind on a well-weighted putt. */
+  private windAimFixPx() {
+    const proj = this.projector();
+    const setup = this.puttSetup(proj);
+    const read = { cancel: false as const, power: this.puttWindow().ideal, aim: 0, bend: 0, snap: 0, releaseSpeed: 0 };
+    const u = previewPutt(read, setup, this.cfg).atBasket?.u ?? 0;
+    return -Math.atan2(u, proj.distance) / this.cfg.puttMeterAimPerPx;
   }
 
   private puttWindow() {
