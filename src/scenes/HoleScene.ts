@@ -29,7 +29,7 @@ import type { Disc } from '../sim/discs';
 import type { Hand, Style, ThrowInput } from '../sim/flight';
 import type { RestKind } from '../sim/ground';
 import { angleFromDir, clamp, dist, lerp, MPH_TO_FTPS, type PathPoint, type Vec2 } from '../sim/math';
-import { meterAim, meterPower, meterRelease, meterTop } from '../game/puttMeter';
+import { meterAim, meterFill, meterPower, meterRelease, meterTop, meterZoneLine } from '../game/puttMeter';
 import { describeMiss, type PuttOutcome, type PuttResult, type PuttSetup, previewPutt, PUTT_PHYSICS, puttPowerWindow, readSwipe, resolvePutt, type SwipePoint } from '../sim/putt';
 import { makeRng, mixSeed } from '../sim/rng';
 import { makeTerrain, type Terrain } from '../sim/terrain';
@@ -301,7 +301,7 @@ export class HoleScene implements Scene {
   /** Exposed for smoke tests. */
   get debug() {
     const g = this.gesture;
-    const meter = g?.kind === 'meter' && this.puttViewVisible() ? { power: meterPower(this.time - g.t0, g.top, this.cfg), ...this.puttWindow(), aimFixPx: this.windAimFixPx() } : null;
+    const meter = g?.kind === 'meter' && this.puttViewVisible() ? { power: meterPower(this.time - g.t0, this.time, g.top, this.puttWindow(), this.cfg), ...this.puttWindow(), aimFixPx: this.windAimFixPx() } : null;
     return { mode: this.mode, state: this.state, lie: this.state.lie, disc: this.disc.id, puttView: this.puttViewVisible(), meter };
   }
 
@@ -674,7 +674,7 @@ export class HoleScene implements Scene {
         this.puttFromSwipe(g.pts);
         break;
       case 'meter': {
-        const read = meterRelease(this.time - g.t0, p.x - g.x0, p.y - g.y0, g.top, this.cfg);
+        const read = meterRelease(this.time - g.t0, this.time, p.x - g.x0, p.y - g.y0, g.top, this.puttWindow(), this.cfg);
         if (read.cancel) {
           if (read.reason === 'slid-down') this.hint = { text: 'SLID DOWN · NO PUTT', t: 0 };
           else if (!this.hintsOn()) this.hint = { text: 'HOLD, THEN LET GO', t: 0 };
@@ -1231,33 +1231,36 @@ export class HoleScene implements Scene {
   private renderMeterAim(ctx: CanvasRenderingContext2D, proj: PuttProjector) {
     const g = this.gesture?.kind === 'meter' ? this.gesture : null;
     const top = g ? g.top : meterTop(proj.distance, proj.rise, this.cfg);
-    const power = g ? meterPower(this.time - g.t0, g.top, this.cfg) : null;
     const cancelling = !!g && g.y - g.y0 > this.cfg.puttMeterCancelPx;
     const win = puttPowerWindow(proj.distance, proj.rise, this.cfg);
+    // The zone rides its own clock; the needle is the bar fill. Power comes from how they line up.
+    const line = meterZoneLine(this.time, top, win, this.cfg);
+    const fill = g ? meterFill(this.time - g.t0, this.cfg) : null;
+    const power = g ? meterPower(this.time - g.t0, this.time, g.top, win, this.cfg) : null;
 
     // The bar, right edge.
     const w = 12;
     const x = VIEW_W - w - 4;
     const barTop = 84; // clear of the minimap
     const h = TRAY_Y - 30 - barTop;
-    const yOf = (p: number) => barTop + h - Math.round((clamp(p, 0, top) / top) * h);
+    const yOf = (f: number) => barTop + h - Math.round(clamp(f, 0, 1) * h);
     panel(ctx, x - 1, barTop - 1, w + 2, h + 2, PAL.night1, PAL.dusk);
     ctx.fillStyle = PAL.night3;
     ctx.fillRect(x, barTop, w, h);
-    const yHi = yOf(win.high);
-    const yLo = yOf(win.low);
+    const yHi = yOf(line + (win.high - win.ideal) / top);
+    const yLo = yOf(line - (win.ideal - win.low) / top);
     ctx.fillStyle = PAL.water;
     ctx.fillRect(x, yHi, w, Math.max(1, yLo - yHi));
     const inWin = power !== null && power >= win.low && power <= win.high;
-    if (power !== null) {
-      const y = yOf(power);
+    if (power !== null && fill !== null) {
+      const y = yOf(fill);
       ctx.fillStyle = cancelling ? PAL.dusk : inWin ? PAL.waterLight : power > win.high ? PAL.red : PAL.amber;
       ctx.fillRect(x + 3, y, w - 6, barTop + h - y);
       ctx.fillStyle = cancelling ? PAL.haze : PAL.ink;
       ctx.fillRect(x - 4, y, w + 8, 1); // the needle
     }
     ctx.fillStyle = PAL.ink;
-    ctx.fillRect(x, yOf(win.ideal), w, 1);
+    ctx.fillRect(x, yOf(line), w, 1);
     const word = cancelling ? 'OFF' : power === null ? 'PWR' : inWin ? 'GOOD' : power > win.high ? 'HARD' : 'SOFT';
     const col = cancelling || power === null ? PAL.inkDim : inWin ? PAL.waterLight : power > win.high ? PAL.red : PAL.amber;
     drawTextShadow(ctx, word, x + w + 1, barTop + h + 4, col, PAL.night0, 'right');
@@ -1265,7 +1268,7 @@ export class HoleScene implements Scene {
     if (!g) {
       if (this.hintsOn()) {
         const bob = Math.round(Math.sin(this.time * 4) * 2);
-        drawTextShadow(ctx, 'HOLD TO CHARGE · LET GO IN THE BLUE', VIEW_W / 2 - 8, TRAY_Y - 40 + bob, PAL.ink, PAL.night0, 'center');
+        drawTextShadow(ctx, 'HOLD TO CHARGE · LET GO ON THE BLUE', VIEW_W / 2 - 8, TRAY_Y - 40 + bob, PAL.ink, PAL.night0, 'center');
         drawTextShadow(ctx, 'SLIDE SIDEWAYS TO AIM', VIEW_W / 2 - 8, TRAY_Y - 8, PAL.inkDim, PAL.night0, 'center');
       }
       return;
