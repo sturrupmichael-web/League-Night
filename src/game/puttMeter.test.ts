@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG } from '../config';
-import { meterAim, meterFill, meterPower, meterRelease, meterTop, meterZoneShare } from './puttMeter';
+import { meterAim, meterFill, meterPower, meterRelease, meterTop, meterZoneLine, meterZoneShare, powerAt } from './puttMeter';
 import { puttPowerWindow, resolvePutt } from '../sim/putt';
 import { makeRng } from '../sim/rng';
 
@@ -47,26 +47,50 @@ describe('putt meter', () => {
 
   it('lets go into a putt read, or calls it off for a tap or a slide down', () => {
     const top = meterTop(30, 0, cfg);
-    expect(meterRelease(0.05, 0, 0, top, cfg)).toEqual({ cancel: true, reason: 'tap' });
-    expect(meterRelease(0.5, 0, cfg.puttMeterCancelPx + 5, top, cfg)).toEqual({ cancel: true, reason: 'slid-down' });
-    const r = meterRelease(0.5, 20, 0, top, cfg);
+    const win = puttPowerWindow(30, 0, cfg);
+    expect(meterRelease(0.05, 0, 0, 0, top, win, cfg)).toEqual({ cancel: true, reason: 'tap' });
+    expect(meterRelease(0.5, 0, 0, cfg.puttMeterCancelPx + 5, top, win, cfg)).toEqual({ cancel: true, reason: 'slid-down' });
+    const r = meterRelease(0.5, 1.3, 20, 0, top, win, cfg);
     expect(r.cancel).toBe(false);
     if (!r.cancel) {
-      expect(r.power).toBeCloseTo(meterPower(0.5, top, cfg));
+      expect(r.power).toBeCloseTo(meterPower(0.5, 1.3, top, win, cfg));
       expect(r.aim).toBeGreaterThan(0);
       expect(r.bend).toBe(0);
     }
     expect(meterAim(-20, cfg)).toBeLessThan(0);
   });
 
-  it('a straight 25 ft putt released in the window finds the chains', () => {
+  it('a straight 25 ft putt let go with the needle on the moving zone line finds the chains', () => {
     const d = 25;
     const top = meterTop(d, 0, cfg);
     const w = puttPowerWindow(d, 0, cfg);
-    const held = (w.ideal / top) * cfg.puttMeterRiseS;
-    const r = meterRelease(held, 0, 0, top, cfg);
+    // Zone line at some moment; hold until the needle meets it on the way up.
+    const now = 0.9;
+    const line = meterZoneLine(now, top, w, cfg);
+    const held = line * cfg.puttMeterRiseS;
+    const r = meterRelease(held, now, 0, 0, top, w, cfg);
     if (r.cancel) throw new Error('cancelled');
+    expect(r.power).toBeCloseTo(w.ideal);
     const res = resolvePutt(r, { distance: d, rise: 0 }, makeRng(3), cfg);
     expect(res.made).toBe(true);
+  });
+
+  it('moves the zone along the bar and keeps it on the bar', () => {
+    const top = meterTop(40, 0, cfg);
+    const w = puttPowerWindow(40, 0, cfg);
+    const lines = Array.from({ length: 50 }, (_, i) => meterZoneLine(i * 0.1, top, w, cfg));
+    expect(Math.max(...lines) - Math.min(...lines)).toBeGreaterThan(0.5);
+    for (const l of lines) {
+      expect(l - (w.ideal - w.low) / top).toBeGreaterThanOrEqual(0);
+      expect(l + (w.high - w.ideal) / top).toBeLessThanOrEqual(1);
+    }
+    expect(meterZoneLine(1, top, w, { ...cfg, puttMeterZoneMove: 0 })).toBeCloseTo(w.ideal / top);
+  });
+
+  it('a needle above the zone putts hard, below it soft', () => {
+    const top = meterTop(30, 0, cfg);
+    const w = puttPowerWindow(30, 0, cfg);
+    expect(powerAt(0.6, 0.4, top, w)).toBeGreaterThan(w.high);
+    expect(powerAt(0.3, 0.4, top, w)).toBeLessThan(w.low);
   });
 });

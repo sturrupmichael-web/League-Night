@@ -119,6 +119,10 @@ export const DEFAULT_CONFIG = {
   puttMeterZoneFar: 0.04,
   puttMeterNearFt: 10,
   puttMeterFarFt: 70,
+  /** 1 = the blue zone slides up and down the bar, so the release has to meet it. */
+  puttMeterZoneMove: 1,
+  /** Seconds for the zone to go bottom -> top -> bottom. */
+  puttMeterZonePeriodS: 2.4,
   /** How fast it narrows: higher stays wide longer near the basket and then drops off. */
   puttMeterZoneCurve: 3,
   /** Aim (radians) per view px the thumb slides sideways while holding. */
@@ -232,6 +236,8 @@ export const CONFIG_META: ConfigMeta[] = [
   m('Putting', 'puttMeterRiseS', 0.4, 3, 0.05),
   m('Putting', 'puttMeterZoneNear', 0.05, 0.6, 0.01),
   m('Putting', 'puttMeterZoneFar', 0.01, 0.3, 0.005),
+  m('Putting', 'puttMeterZoneMove', 0, 1, 1),
+  m('Putting', 'puttMeterZonePeriodS', 0.6, 6, 0.1),
   m('Putting', 'puttMeterZoneCurve', 0.5, 5, 0.1),
   m('Putting', 'puttMeterAimPerPx', 0, 0.006, 0.0002),
   m('Putting', 'puttFullSwipePx', 60, 260, 1),
