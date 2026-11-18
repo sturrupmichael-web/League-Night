@@ -41,8 +41,6 @@ export async function holeInfo(page: Page) {
       basket: ws(bk.x, bk.y),
       gimme: cfg.gimmeFt as number,
       pull: cfg.maxPullPx as number,
-      swipe: cfg.puttFullSwipePx as number,
-      snapRef: cfg.puttSnapRef as number,
     };
   });
 }
@@ -59,13 +57,19 @@ export async function playHole(page: Page) {
       await page.waitForTimeout(400);
       continue;
     } else if (h.putt) {
-      const len = Math.min(1.1, 0.09 + h.dist / 75) * h.swipe;
+      // Hold to charge the meter, let go once it is near a perfect putt's power.
       await page.mouse.move(X(90), Y(250));
       await page.mouse.down();
-      for (let k = 1; k <= 10; k++) {
-        await page.mouse.move(X(90), Y(250 - (len * k) / 10));
-        await page.waitForTimeout(len / h.snapRef * 100);
-      }
+      // Aim into the wind once the meter is live.
+      await page.waitForFunction(() => (window as any).leagueNight.scene.debug.meter);
+      const fix = await page.evaluate(() => (window as any).leagueNight.scene.debug.meter.aimFixPx as number);
+      await page.mouse.move(X(90 + fix), Y(250));
+      // Let go early in the blue (frame-accurate, in the page), leaving room for the release to land a frame late.
+      await page.waitForFunction(() => {
+        const m = (window as any).leagueNight.scene.debug.meter;
+        const w = m.high - m.low;
+        return m.power >= m.low + w * 0.1 && m.power <= m.low + w * 0.5;
+      }, null, { polling: 'raf', timeout: 10_000 });
       await page.mouse.up();
     } else if (h.dist <= h.gimme) {
       await page.mouse.click(X(h.disc.x), Y(h.disc.y));

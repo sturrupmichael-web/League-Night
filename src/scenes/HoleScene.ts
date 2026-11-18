@@ -28,7 +28,8 @@ import { HoleRenderer } from '../render/topdown';
 import type { Disc } from '../sim/discs';
 import type { Hand, Style, ThrowInput } from '../sim/flight';
 import type { RestKind } from '../sim/ground';
-import { angleFromDir, clamp, dist, lerp, type PathPoint, type Vec2 } from '../sim/math';
+import { angleFromDir, clamp, dist, lerp, MPH_TO_FTPS, type PathPoint, type Vec2 } from '../sim/math';
+import { meterAim, meterFill, meterPower, meterRelease, meterTop, meterZoneLine } from '../game/puttMeter';
 import { describeMiss, type PuttOutcome, type PuttResult, type PuttSetup, previewPutt, PUTT_PHYSICS, puttPowerWindow, readSwipe, resolvePutt, type SwipePoint } from '../sim/putt';
 import { makeRng, mixSeed } from '../sim/rng';
 import { makeTerrain, type Terrain } from '../sim/terrain';
@@ -127,6 +128,7 @@ type Gesture =
   | { kind: 'sling'; id: number; pull: Vec2 }
   | { kind: 'pan'; id: number; last: Vec2 }
   | { kind: 'swipe'; id: number; pts: SwipePoint[] }
+  | { kind: 'meter'; id: number; x0: number; y0: number; x: number; y: number; t0: number; top: number }
   | { kind: 'gimme'; id: number }
   | { kind: 'button'; id: number; b: Button }
   | { kind: 'mini'; id: number }
@@ -298,7 +300,9 @@ export class HoleScene implements Scene {
 
   /** Exposed for smoke tests. */
   get debug() {
-    return { mode: this.mode, state: this.state, lie: this.state.lie, disc: this.disc.id, puttView: this.puttViewVisible() };
+    const g = this.gesture;
+    const meter = g?.kind === 'meter' && this.puttViewVisible() ? { power: meterPower(this.time - g.t0, this.time, g.top, this.puttWindow(), this.cfg), ...this.puttWindow(), aimFixPx: this.windAimFixPx() } : null;
+    return { mode: this.mode, state: this.state, lie: this.state.lie, disc: this.disc.id, puttView: this.puttViewVisible(), meter };
   }
 
   // ---------- Round bookkeeping ----------
@@ -583,7 +587,11 @@ export class HoleScene implements Scene {
 
     if (this.puttViewVisible()) {
       if (this.aimT < this.cfg.puttTapGuardS) return; // a late tap from skipping the flight
-      if (p.y > HUD_H && p.y < TRAY_Y) this.gesture = { kind: 'swipe', id: p.id, pts: [{ x: p.x, y: p.y, t: performance.now() }] };
+      if (p.y <= HUD_H || p.y >= TRAY_Y) return;
+      if (this.cfg.puttMeter) {
+        const proj = this.projector();
+        this.gesture = { kind: 'meter', id: p.id, x0: p.x, y0: p.y, x: p.x, y: p.y, t0: this.time, top: meterTop(proj.distance, proj.rise, this.cfg) };
+      } else this.gesture = { kind: 'swipe', id: p.id, pts: [{ x: p.x, y: p.y, t: performance.now() }] };
       return;
     }
     const d = this.discScreen();
@@ -621,6 +629,10 @@ export class HoleScene implements Scene {
         break;
       case 'swipe':
         g.pts.push({ x: p.x, y: p.y, t: performance.now() });
+        break;
+      case 'meter':
+        g.x = p.x;
+        g.y = p.y;
         break;
       default:
     }
@@ -661,6 +673,16 @@ export class HoleScene implements Scene {
         g.pts.push({ x: p.x, y: p.y, t: performance.now() });
         this.puttFromSwipe(g.pts);
         break;
+      case 'meter': {
+        const read = meterRelease(this.time - g.t0, this.time, p.x - g.x0, p.y - g.y0, g.top, this.puttWindow(), this.cfg);
+        if (read.cancel) {
+          if (read.reason === 'slid-down') this.hint = { text: 'SLID DOWN · NO PUTT', t: 0 };
+          else if (!this.hintsOn()) this.hint = { text: 'HOLD, THEN LET GO', t: 0 };
+          return;
+        }
+        this.puttWith(read);
+        break;
+      }
       case 'gimme': {
         const d = this.discScreen();
         if (Math.hypot(p.x - d.x, p.y - d.y) <= this.cfg.grabRadiusPx) this.startGimme();
@@ -766,6 +788,10 @@ export class HoleScene implements Scene {
       this.hint = { text: why, t: 0 };
       return;
     }
+    this.puttWith(read);
+  }
+
+  private puttWith(read: Extract<SwipeRead, { cancel: false }>) {
     const proj = this.projector();
     const seed = this.nextSeed();
     const setup = this.puttSetup(proj);
@@ -776,6 +802,20 @@ export class HoleScene implements Scene {
     sfx.play('putt');
     this.toast = null;
     this.hint = null;
+  }
+
+  /** For test bots: how far to slide the thumb (px) to cancel the crosswind on a well-weighted putt. */
+  private windAimFixPx() {
+    const proj = this.projector();
+    const setup = this.puttSetup(proj);
+    const read = { cancel: false as const, power: this.puttWindow().ideal, aim: 0, bend: 0, snap: 0, releaseSpeed: 0 };
+    const u = previewPutt(read, setup, this.cfg).atBasket?.u ?? 0;
+    return -Math.atan2(u, proj.distance) / this.cfg.puttMeterAimPerPx;
+  }
+
+  private puttWindow() {
+    const proj = this.projector();
+    return puttPowerWindow(proj.distance, proj.rise, this.cfg);
   }
 
   private puttSetup(proj: PuttProjector): PuttSetup {
@@ -1158,13 +1198,19 @@ export class HoleScene implements Scene {
 
     // Read of the putt: distance, slope, wind.
     const y = HUD_H + 4;
-    panel(ctx, 3, y, 56, 22, 'rgba(13,11,19,0.8)', PAL.night3);
+    const cross = this.puttSetup(proj).crosswind ?? 0;
+    const crossMph = Math.round(Math.abs(cross) / MPH_TO_FTPS);
+    panel(ctx, 3, y, crossMph > 0 ? 78 : 56, crossMph > 0 ? 30 : 22, 'rgba(13,11,19,0.8)', PAL.night3);
     drawText(ctx, `${Math.round(proj.distance)} FT PUTT`, 6, y + 4, PAL.ink);
     const rise = proj.rise;
     const slope = Math.abs(rise) < 0.5 ? 'FLAT' : rise > 0 ? `UPHILL ${rise.toFixed(1)}` : `DOWNHILL ${(-rise).toFixed(1)}`;
     drawText(ctx, slope, 6, y + 12, rise > 0.5 ? PAL.amber : rise < -0.5 ? PAL.waterLight : PAL.inkDim);
+    // Crosswind: which way it pushes the putt, so the player knows to aim off the chains.
+    if (crossMph > 0) drawText(ctx, cross > 0 ? `WIND PUSHES RIGHT ${crossMph}` : `WIND PUSHES LEFT ${crossMph}`, 6, y + 20, crossMph >= 6 ? PAL.amber : PAL.inkDim);
 
-    if (this.mode === 'aim') {
+    if (this.mode === 'aim' && this.cfg.puttMeter) {
+      this.renderMeterAim(ctx, proj);
+    } else if (this.mode === 'aim') {
       const g = this.gesture;
       const live = g?.kind === 'swipe' ? readSwipe(g.pts, this.cfg, true) : null;
       const read = live && !live.cancel ? live : null;
@@ -1178,6 +1224,82 @@ export class HoleScene implements Scene {
         drawTextShadow(ctx, 'SWIPE UP AT THE CHAINS', VIEW_W / 2, TRAY_Y - 40 + bob, PAL.ink, PAL.night0, 'center');
         drawTextShadow(ctx, 'FLICK = MORE · PUSH = LESS · CURVE = BEND', VIEW_W / 2, TRAY_Y - 8, PAL.inkDim, PAL.night0, 'center');
       }
+    }
+  }
+
+  /** Hold-to-charge putting: the meter, the aim marker on the chains, the thumb and the hints. */
+  private renderMeterAim(ctx: CanvasRenderingContext2D, proj: PuttProjector) {
+    const g = this.gesture?.kind === 'meter' ? this.gesture : null;
+    const top = g ? g.top : meterTop(proj.distance, proj.rise, this.cfg);
+    const cancelling = !!g && g.y - g.y0 > this.cfg.puttMeterCancelPx;
+    const win = puttPowerWindow(proj.distance, proj.rise, this.cfg);
+    // The zone rides its own clock; the needle is the bar fill. Power comes from how they line up.
+    const line = meterZoneLine(this.time, top, win, this.cfg);
+    const fill = g ? meterFill(this.time - g.t0, this.cfg) : null;
+    const power = g ? meterPower(this.time - g.t0, this.time, g.top, win, this.cfg) : null;
+
+    // The bar, right edge.
+    const w = 12;
+    const x = VIEW_W - w - 4;
+    const barTop = 84; // clear of the minimap
+    const h = TRAY_Y - 30 - barTop;
+    const yOf = (f: number) => barTop + h - Math.round(clamp(f, 0, 1) * h);
+    panel(ctx, x - 1, barTop - 1, w + 2, h + 2, PAL.night1, PAL.dusk);
+    ctx.fillStyle = PAL.night3;
+    ctx.fillRect(x, barTop, w, h);
+    const yHi = yOf(line + (win.high - win.ideal) / top);
+    const yLo = yOf(line - (win.ideal - win.low) / top);
+    ctx.fillStyle = PAL.water;
+    ctx.fillRect(x, yHi, w, Math.max(1, yLo - yHi));
+    const inWin = power !== null && power >= win.low && power <= win.high;
+    if (power !== null && fill !== null) {
+      const y = yOf(fill);
+      ctx.fillStyle = cancelling ? PAL.dusk : inWin ? PAL.waterLight : power > win.high ? PAL.red : PAL.amber;
+      ctx.fillRect(x + 3, y, w - 6, barTop + h - y);
+      ctx.fillStyle = cancelling ? PAL.haze : PAL.ink;
+      ctx.fillRect(x - 4, y, w + 8, 1); // the needle
+    }
+    ctx.fillStyle = PAL.ink;
+    ctx.fillRect(x, yOf(line), w, 1);
+    const word = cancelling ? 'OFF' : power === null ? 'PWR' : inWin ? 'GOOD' : power > win.high ? 'HARD' : 'SOFT';
+    const col = cancelling || power === null ? PAL.inkDim : inWin ? PAL.waterLight : power > win.high ? PAL.red : PAL.amber;
+    drawTextShadow(ctx, word, x + w + 1, barTop + h + 4, col, PAL.night0, 'right');
+
+    if (!g) {
+      if (this.hintsOn()) {
+        const bob = Math.round(Math.sin(this.time * 4) * 2);
+        drawTextShadow(ctx, 'HOLD TO CHARGE · LET GO ON THE BLUE', VIEW_W / 2 - 8, TRAY_Y - 40 + bob, PAL.ink, PAL.night0, 'center');
+        drawTextShadow(ctx, 'SLIDE SIDEWAYS TO AIM', VIEW_W / 2 - 8, TRAY_Y - 8, PAL.inkDim, PAL.night0, 'center');
+      }
+      return;
+    }
+
+    // Aim: a marker on the chains (before wind), plus the first feet of the line.
+    const aim = meterAim(g.x - g.x0, this.cfg);
+    const mid = (this.cfg.basketCatchLow + this.cfg.basketCatchHigh) / 2 + proj.rise;
+    const m = proj.project(Math.tan(aim) * proj.distance, proj.distance, mid);
+    if (m && !cancelling) {
+      const r = clamp(Math.round(m.s * 0.5), 2, 8);
+      const mx = Math.round(m.x);
+      const my = Math.round(m.y);
+      ctx.fillStyle = PAL.amber;
+      ctx.fillRect(mx - r - 2, my, 3, 1);
+      ctx.fillRect(mx + r, my, 3, 1);
+      ctx.fillRect(mx, my - r - 2, 1, 3);
+      ctx.fillRect(mx, my + r, 1, 3);
+    }
+    if (!cancelling && power !== null && this.cfg.puttGuideFt > 0) {
+      this.drawPuttGuide(ctx, proj, { cancel: false, power: Math.max(power, win.low), aim, bend: 0, snap: 0, releaseSpeed: 0 });
+    }
+
+    // The thumb: where it went down and where it is now.
+    ctx.fillStyle = cancelling ? PAL.red : PAL.inkDim;
+    ctx.fillRect(Math.round(g.x0) - 1, Math.round(g.y0) - 1, 3, 3);
+    ctx.fillStyle = cancelling ? PAL.red : PAL.amber;
+    ctx.fillRect(Math.round(g.x) - 2, Math.round(g.y) - 2, 4, 4);
+    if (this.hintsOn()) {
+      const txt = cancelling ? 'LET GO TO CANCEL' : 'LET GO TO PUTT · SLIDE DOWN TO CANCEL';
+      drawTextShadow(ctx, txt, VIEW_W / 2 - 8, TRAY_Y - 8, cancelling ? PAL.red : PAL.inkDim, PAL.night0, 'center');
     }
   }
 

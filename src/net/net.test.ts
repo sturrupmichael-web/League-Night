@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { PUTT_PHYSICS } from '../sim/putt';
 import { DEFAULT_CONFIG } from '../config';
 import courseJson from '../content/courses/lantern-park.json';
 import discsJson from '../content/discs.json';
@@ -134,7 +135,7 @@ describe('throw verification', () => {
       const honest = playHole(idx, 4242);
       const putts = honest.filter((p) => p.kind === 'putt');
       if (!putts.length) continue;
-      expect(putts.every((p) => p.replay?.t === 'putt' && p.replay.pv === 2)).toBe(true);
+      expect(putts.every((p) => p.replay?.t === 'putt' && p.replay.pv === PUTT_PHYSICS)).toBe(true);
       const unknown = structuredClone(honest);
       for (const p of unknown) if (p.replay?.t === 'putt') p.replay.pv = 99;
       expect(verifyHole(unknown, hole, terrain, 4242, idx, cfg).issues.join()).toMatch(/unknown putting physics/);
