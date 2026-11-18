@@ -1,7 +1,7 @@
 /** BULLSEYE BOARD: flick five discs at a target board that drifts across the tree line. */
 import { sfx } from '../../core/audio';
 import type { PointerInfo } from '../../core/input';
-import { VIEW_W } from '../../core/screen';
+import { EXTRA_H, VIEW_W } from '../../core/screen';
 import { drawText, drawTextShadow } from '../../render/font';
 import { PAL } from '../../render/palette';
 import { fillCircle } from '../../render/sprites';
@@ -9,8 +9,9 @@ import { lerp } from '../../sim/math';
 import { makeRng, type Rng } from '../../sim/rng';
 import { drawParkBackdrop, TurnGame } from './TurnGame';
 
-const BOARD_Y = 70;
-const START = { x: 90, y: 268 };
+// On tall phones the board drops a little and the disc sits at the bottom of the screen.
+const BOARD_Y = 70 + Math.round(EXTRA_H / 4);
+const START = { x: 90, y: 268 + EXTRA_H };
 const TOSSES = 5;
 const RINGS = [
   { r: 5, pts: 50, color: PAL.red },
@@ -104,7 +105,7 @@ export class Bullseye extends TurnGame {
   }
 
   protected playRender(ctx: CanvasRenderingContext2D) {
-    drawParkBackdrop(ctx, 120);
+    drawParkBackdrop(ctx, BOARD_Y + 50);
     const bx = this.boardX();
     // Board on a post.
     ctx.fillStyle = PAL.night0;
@@ -140,7 +141,7 @@ export class Bullseye extends TurnGame {
     drawText(ctx, `DISC ${Math.min(this.tossed + 1, TOSSES)} OF ${TOSSES}`, VIEW_W - 6, 6, PAL.ink, 'right');
     const w = this.wind;
     drawText(ctx, w === 0 ? 'WIND: NONE' : `WIND: ${w > 0 ? '>>' : '<<'} ${Math.abs(w)}`, VIEW_W / 2, 16, PAL.inkDim, 'center');
-    if (this.last) drawTextShadow(ctx, this.last.text, VIEW_W / 2, 150, this.last.text.startsWith('+') ? PAL.amber : PAL.red, PAL.night0, 'center');
-    if (this.phase === 'play' && !this.flying && this.tossed === 0 && !this.drag) drawTextShadow(ctx, 'FLICK UP', VIEW_W / 2, 250, PAL.ink, PAL.night0, 'center');
+    if (this.last) drawTextShadow(ctx, this.last.text, VIEW_W / 2, 150 + Math.round(EXTRA_H / 2), this.last.text.startsWith('+') ? PAL.amber : PAL.red, PAL.night0, 'center');
+    if (this.phase === 'play' && !this.flying && this.tossed === 0 && !this.drag) drawTextShadow(ctx, 'FLICK UP', VIEW_W / 2, START.y - 18, PAL.ink, PAL.night0, 'center');
   }
 }

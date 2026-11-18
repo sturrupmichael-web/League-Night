@@ -366,6 +366,11 @@ export class App {
     return this.customHole ?? this.courseOf(round).holes[round.order[idx]];
   }
 
+  /** Open one turn minigame straight away, paying no Cred (dev/testing: ?turn=bullseye|lost|skip). */
+  startTurnGame(id: string) {
+    this.turnGame(id, () => {}, () => this.title());
+  }
+
   /** Start a one-off round on a single hole (dev/testing: ?hole=N). */
   startSingleHole(index: number, seed: number, courseId?: string) {
     const course = courseById(courseId);
