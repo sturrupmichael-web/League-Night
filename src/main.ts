@@ -8,6 +8,7 @@ import { loadFont } from './render/font';
 import { loadDevOverrides, mountDevPanel } from './dev/panel';
 import { loadDraft, mountEditor } from './dev/editor';
 import { parseHole } from './game/hole';
+import { joinSiteLive } from './net/siteLive';
 import './style.css';
 
 const params = new URLSearchParams(location.search);
@@ -25,6 +26,7 @@ if (params.has('editor')) {
 } else boot();
 
 function boot() {
+  joinSiteLive('league-night'); // live "N playing" + visit counter on michaelsturrup.com
   void loadFont(); // pixel glyphs stand in for the first few frames until it is ready
   const canvas = document.getElementById('game') as HTMLCanvasElement;
   const screen = createScreen(canvas);
